@@ -116,12 +116,24 @@ class OpenCodeProjectSession:
             return False, "Terminal backend not available"
 
         pane_id = self.pane_id
+        marker = self.pane_title_marker
+        resolver = getattr(backend, "find_pane_by_title_marker", None)
+
         if pane_id and backend.is_alive(pane_id):
+            if marker and callable(resolver):
+                try:
+                    resolved = resolver(marker)
+                    if resolved and str(resolved) != str(pane_id) and backend.is_alive(str(resolved)):
+                        self.data["pane_id"] = str(resolved)
+                        self.data["updated_at"] = _now_str()
+                        self._write_back()
+                        self._attach_pane_log(backend, str(resolved))
+                        return True, str(resolved)
+                except Exception:
+                    pass
             self._attach_pane_log(backend, pane_id)
             return True, pane_id
 
-        marker = self.pane_title_marker
-        resolver = getattr(backend, "find_pane_by_title_marker", None)
         if marker and callable(resolver):
             resolved = resolver(marker)
             if resolved and backend.is_alive(str(resolved)):
