@@ -162,7 +162,7 @@
 | `cping`, `gping`, `oping`, `dping`, `lping` | `ccb-ping <provider>` |
 | `cpend`, `gpend`, `opend`, `dpend`, `lpend` | `pend <provider> [N]` |
 
-**支持的 provider:** `gemini`, `codex`, `opencode`, `droid`, `claude`
+**支持的 provider:** `gemini`, `codex`, `opencode`, `droid`, `claude`, `copilot`
 
 **🪟 Windows WezTerm + PowerShell 支持：**
 - 完整的 Windows 原生支持（WezTerm 终端）
@@ -588,7 +588,7 @@ echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zprofile
 
 ### 新统一命令
 - **`ask <provider> <message>`** - 统一请求命令（默认后台）
-  - 支持 provider: `gemini`, `codex`, `opencode`, `droid`, `claude`
+  - 支持 provider: `gemini`, `codex`, `opencode`, `droid`, `claude`, `copilot`
   - 默认后台；在 Codex 托管环境优先前台执行以避免后台被清理
   - 可用 `--foreground` / `--background` 或 `CCB_ASK_FOREGROUND=1` / `CCB_ASK_BACKGROUND=1` 覆盖
   - 前台执行使用同步发送，默认关闭 completion hook（除非设置 `CCB_COMPLETION_HOOK_ENABLED`）

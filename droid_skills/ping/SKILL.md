@@ -1,6 +1,6 @@
 ---
 name: ping
-description: Test connectivity with AI provider (gemini/codex/opencode/droid/claude).
+description: Test connectivity with AI provider (gemini/codex/opencode/droid/claude/copilot).
 metadata:
   short-description: Test AI provider connectivity
 ---

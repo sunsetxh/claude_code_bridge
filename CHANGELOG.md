@@ -90,7 +90,7 @@
 | `cping`, `gping`, `oping`, `dping`, `lping` | `ccb-ping <provider>` (skill: `/cping`) |
 | `cpend`, `gpend`, `opend`, `dpend`, `lpend` | `pend <provider> [N]` |
 
-**Supported providers:** `gemini`, `codex`, `opencode`, `droid`, `claude`
+**Supported providers:** `gemini`, `codex`, `opencode`, `droid`, `claude`, `copilot`
 
 ### 🪟 Windows WezTerm + PowerShell Support
 

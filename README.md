@@ -185,7 +185,7 @@ See [CHANGELOG.md](CHANGELOG.md) for full details.
 | `cping`, `gping`, `oping`, `dping`, `lping` | `ccb-ping <provider>` |
 | `cpend`, `gpend`, `opend`, `dpend`, `lpend` | `pend <provider> [N]` |
 
-**Supported providers:** `gemini`, `codex`, `opencode`, `droid`, `claude`
+**Supported providers:** `gemini`, `codex`, `opencode`, `droid`, `claude`, `copilot`
 
 **🪟 Windows WezTerm + PowerShell Support:**
 - Full native Windows support with WezTerm terminal
@@ -581,7 +581,7 @@ Once started, collaborate naturally. Claude will detect when to delegate tasks.
 
 ### Unified Commands
 - **`ask <provider> <message>`** - Unified request (background by default)
-  - Supports: `gemini`, `codex`, `opencode`, `droid`, `claude`
+  - Supports: `gemini`, `codex`, `opencode`, `droid`, `claude`, `copilot`
   - Defaults to background; managed Codex sessions prefer foreground to avoid cleanup
   - Override with `--foreground` / `--background` or `CCB_ASK_FOREGROUND=1` / `CCB_ASK_BACKGROUND=1`
   - Foreground uses sync send and disables completion hook unless `CCB_COMPLETION_HOOK_ENABLED` is set
