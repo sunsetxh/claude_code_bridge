@@ -1,43 +1,35 @@
-# Cursor Launcher TODO
+# Cursor Launcher Follow-Up
 
 ## Goal
 
 Bring Cursor to launcher parity with the other interactive pane-backed providers.
 
-## Current Gap
+## Status
 
-Current Cursor support started as communication-level support:
+Core support is now in place:
 
-- supported: `ask cursor`, `ccb-ping cursor`, `uping`, `upend`
-- launcher support is being built: `ccb cursor`
+- supported communication tools: `ask cursor`, `ccb-ping cursor`, `uping`, `upend`
+- launcher entrypoint exists: `ccb cursor`
+- launcher code paths exist for tmux, wezterm, and current-pane
+- `.cursor-session` writing and cleanup paths are present
 
-## TODO
+## Remaining TODO
 
-1. Finish and verify `ccb cursor` launcher support
-- tmux pane startup
-- wezterm pane startup
-- current-pane startup
-
-2. Define Cursor pane/session behavior
-- pane title and human-readable display name
-- provider binding and registry updates
-- `.cursor-session` compatibility with current tools
-
-3. Validate interaction model for `cursor-agent`
-- direct interactive startup behavior
-- startup command defaults
-- practical resume strategy
-
-4. Clarify docs
-- distinguish communication support from launcher/pane support
-- document current limitations and expected behavior
-
-5. Add incremental attach support
+1. Add incremental attach support
 - support appending Cursor to an already-running project-scoped CCB session
 - likely shape: `ccb add cursor`
 - avoid requiring a full CCB restart just to add one provider pane
 
+2. Finish runtime validation
+- verify `ccb cursor` in a fresh launcher session end to end
+- confirm `cursor-agent` startup behavior is stable in pane-backed use
+- confirm resume strategy is acceptable in real usage
+
+3. Clarify docs
+- distinguish communication support from launcher/pane support
+- document current limitations and expected behavior
+
 ## Notes
 
 - Internal marker/session stability and external display naming should stay decoupled.
-- This file is only for Cursor launcher work; async supervision items live elsewhere.
+- This file now tracks post-launch follow-up, not the initial launcher implementation.

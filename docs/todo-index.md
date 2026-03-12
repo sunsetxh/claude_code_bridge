@@ -8,13 +8,15 @@ This index keeps project follow-up work grouped by topic instead of mixing unrel
   Async task tracking, wait/watch, completion artifacts, and supervisor loop.
 
 - [docs/todo-cursor-launcher.md](/home/wyc/code/github/claude_code_bridge/docs/todo-cursor-launcher.md)
-  Cursor launcher parity, pane/session behavior, and incremental attach support.
+  Remaining Cursor follow-up work after core launcher landing.
 
 - [docs/todo-copilot-validation.md](/home/wyc/code/github/claude_code_bridge/docs/todo-copilot-validation.md)
   Copilot live-session validation that still needs a real end-to-end pass.
 
+## Recently Completed
+
 - [docs/todo-opencode-unified-askd.md](/home/wyc/code/github/claude_code_bridge/docs/todo-opencode-unified-askd.md)
-  Remaining `oask` migration work to the unified `askd` contract.
+  OpenCode client migration to unified `askd` is complete; file kept as implementation record.
 
 ## Notes
 

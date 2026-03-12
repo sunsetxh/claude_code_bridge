@@ -1,37 +1,32 @@
-# OpenCode Unified `askd` TODO
+# OpenCode Unified `askd` Status
 
-## Problem
+## Status
 
-`ccb-ping opencode` can succeed while `oask` still fails with:
+Completed.
 
-- `oask daemon required but not available`
+OpenCode client calls now use the unified `askd` contract:
 
-Root cause is client/daemon contract drift, not session absence.
+- `OASK_CLIENT_SPEC` uses the unified `ask` protocol
+- `try_daemon_request(...)` sends `provider="opencode"`
+- unified requests always carry a `caller` value, defaulting to `manual`
+- `askd.json` is preferred
+- `oaskd.json` is retained only as a legacy fallback for OpenCode
 
-## What Was Observed
+## Landed In Code
 
-- `OASK_CLIENT_SPEC` still uses provider-specific assumptions with `protocol_prefix="oask"`
-- client logic looks for `oaskd.json`
-- actual runtime exposes unified `askd.json`
-- unified daemon responds with `ask.response`, not `oask.response`
-- `try_daemon_request(...)` rejects the response because it expects `oask.response`
-
-## TODO
-
-1. Migrate OpenCode client path fully to unified `askd`
-
-2. Make `oask` use unified daemon state and protocol consistently
-- use `askd.json`
-- send `ask.request`
-- accept `ask.response`
-- keep `provider="opencode"` as the routing key
-
-3. Remove remaining provider-specific `oaskd` assumptions from the client path
+- `lib/providers.py`
+- `lib/askd_client.py`
+- `test/test_oask_unified_askd.py`
 
 ## Validation
 
-- active OpenCode session
-- `oask`
-- `ask opencode`
-- daemon autostart
-- state-file discovery
+Verified with:
+
+- `python -m pytest -q test/test_oask_unified_askd.py`
+- `python -m pytest -q test/test_daemon_only_cli.py`
+- `python -m pytest -q test/test_integration.py`
+
+## Notes
+
+- `CCB_OASKD*` environment variables were intentionally kept for compatibility.
+- `OASKD_SPEC` was intentionally left unchanged; this migration only affected the client path.
