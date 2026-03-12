@@ -3557,6 +3557,7 @@ class AILauncher:
                 self._project_session_file(".claude-session"),
                 self._project_session_file(".droid-session"),
                 self._project_session_file(".copilot-session"),
+                self._project_session_file(".cursor-session"),
             ]:
                 if session_file.exists():
                     try:
@@ -4189,6 +4190,7 @@ def cmd_kill(args):
         "claude": LASK_CLIENT_SPEC,
         "droid": DASK_CLIENT_SPEC,
         "copilot": HASK_CLIENT_SPEC,
+        "cursor": CURSOR_CLIENT_SPEC,
     }
 
     for provider in providers:

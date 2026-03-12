@@ -36,6 +36,8 @@
 
 **Introduction:** Multi-model collaboration avoids model bias, cognitive blind spots, and context limits. Unlike MCP or API-based approaches, ccb gives you a WYSIWYG split-pane terminal where every interaction is visible and every model is controllable.
 
+Project TODOs and follow-up work are indexed in [docs/todo-index.md](/home/wyc/code/github/claude_code_bridge/docs/todo-index.md).
+
 ## ⚡ Why ccb?
 
 | Feature | Benefit |
@@ -187,7 +189,7 @@ See [CHANGELOG.md](CHANGELOG.md) for full details.
 
 **Supported providers:** `gemini`, `codex`, `opencode`, `droid`, `claude`, `copilot`, `cursor`
 
-**Cursor Agent Note:** Cursor uses subprocess automation (`cursor-agent --print --output-format json`) rather than pane-based communication. Use `ask cursor` for prompts and `uping`/`upend` for session info. The `ccb cursor` launcher is not yet available.
+**Cursor Agent Note:** Cursor supports both communication tools (`ask cursor`, `uping`, `upend`) and an in-progress interactive launcher path (`ccb cursor`). See [docs/todo-cursor-launcher.md](/home/wyc/code/github/claude_code_bridge/docs/todo-cursor-launcher.md) for remaining launcher work and validation gaps.
 
 **🪟 Windows WezTerm + PowerShell Support:**
 - Full native Windows support with WezTerm terminal

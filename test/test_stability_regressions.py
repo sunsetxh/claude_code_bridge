@@ -396,3 +396,10 @@ def test_opencode_adapter_recovers_after_dead_pane(monkeypatch, tmp_path: Path) 
     assert result.status == "completed"
     assert [pane for pane, _prompt in sent_prompts] == ["pane-old", "pane-new"]
     assert notifications[0]["status"] == "completed"
+
+
+def test_ccb_cursor_cleanup_paths_present() -> None:
+    content = (REPO_ROOT / "ccb").read_text(encoding="utf-8", errors="ignore")
+
+    assert '".cursor-session"' in content
+    assert '"cursor": CURSOR_CLIENT_SPEC' in content

@@ -35,6 +35,8 @@
 
 **简介：** 多模型协作能有效避免模型偏见、认知盲区和上下文限制。不同于 MCP 或 API 调用方式，ccb 提供终端分屏所见即所得体验——交互皆可见，模型皆可控。
 
+项目待办与后续事项索引见 [docs/todo-index.md](/home/wyc/code/github/claude_code_bridge/docs/todo-index.md)。
+
 ## ⚡ 核心优势
 
 | 特性 | 价值 |
@@ -164,7 +166,7 @@
 
 **支持的 provider:** `gemini`, `codex`, `opencode`, `droid`, `claude`, `copilot`, `cursor`
 
-**Cursor Agent 说明**: Cursor 使用子进程自动化（`cursor-agent --print --output-format json`）而非基于窗格的通信。使用 `ask cursor` 发送提示，使用 `uping`/`upend` 查看会话信息。暂不支持 `ccb cursor` 启动器。
+**Cursor Agent 说明**: Cursor 同时支持通信工具（`ask cursor`、`uping`、`upend`）以及正在推进中的交互式启动器路径（`ccb cursor`）。剩余 launcher 工作和验证缺口见 [docs/todo-cursor-launcher.md](/home/wyc/code/github/claude_code_bridge/docs/todo-cursor-launcher.md)。
 
 **🪟 Windows WezTerm + PowerShell 支持：**
 - 完整的 Windows 原生支持（WezTerm 终端）
