@@ -564,6 +564,9 @@ class TmuxBackend(TerminalBackend):
     def set_pane_title(self, pane_id: str, title: str) -> None:
         if not pane_id:
             return
+        # Keep provider labels stable even if the app inside the pane emits its own title.
+        self._tmux_run(["set-window-option", "-t", pane_id, "allow-rename", "off"], check=False)
+        self._tmux_run(["set-window-option", "-t", pane_id, "automatic-rename", "off"], check=False)
         self._tmux_run(["select-pane", "-t", pane_id, "-T", title or ""], check=False)
 
     def set_pane_user_option(self, pane_id: str, name: str, value: str) -> None:
@@ -585,18 +588,23 @@ class TmuxBackend(TerminalBackend):
         marker = (marker or "").strip()
         if not marker:
             return None
-        cp = self._tmux_run(["list-panes", "-a", "-F", "#{pane_id}\t#{pane_title}"], capture=True)
+        expected_agent = marker
+        if marker.startswith("CCB-"):
+            expected_agent = marker[4:]
+        cp = self._tmux_run(
+            ["list-panes", "-a", "-F", "#{pane_id}\t#{pane_title}\t#{@ccb_agent}"],
+            capture=True,
+        )
         if cp.returncode != 0:
             return None
         for line in (cp.stdout or "").splitlines():
             if not line.strip():
                 continue
-            if "\t" in line:
-                pid, title = line.split("\t", 1)
-            else:
-                parts = line.split(" ", 1)
-                pid, title = (parts[0], parts[1] if len(parts) > 1 else "")
-            if (title or "").startswith(marker):
+            parts = line.split("\t")
+            pid = parts[0] if parts else ""
+            title = parts[1] if len(parts) > 1 else ""
+            agent = parts[2] if len(parts) > 2 else ""
+            if (title or "").startswith(marker) or (agent or "").strip() == expected_agent:
                 pid = pid.strip()
                 if self._looks_like_pane_id(pid):
                     return pid

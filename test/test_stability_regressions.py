@@ -239,3 +239,160 @@ def test_claude_adapter_honors_cancel_event(monkeypatch, tmp_path: Path) -> None
 
     assert result.status == "cancelled"
     assert notifications[0]["status"] == "cancelled"
+
+
+def test_claude_adapter_recovers_after_dead_pane(monkeypatch, tmp_path: Path) -> None:
+    from askd.adapters import claude as claude_mod
+
+    notifications: list[dict] = []
+    sent_prompts: list[tuple[str, str]] = []
+
+    class _Session:
+        work_dir = str(tmp_path)
+        claude_session_path = None
+
+        def __init__(self, pane_id: str):
+            self._pane_id = pane_id
+            self.data = {"pane_id": pane_id, "terminal": "tmux"}
+
+        def ensure_pane(self):
+            return True, self._pane_id
+
+    class _Backend:
+        def __init__(self, alive_map: dict[str, bool]):
+            self.alive_map = alive_map
+
+        def send_text(self, pane_id: str, prompt: str) -> None:
+            sent_prompts.append((pane_id, prompt))
+
+        def is_alive(self, pane_id: str) -> bool:
+            return self.alive_map.get(pane_id, False)
+
+    class _Reader:
+        def __init__(self, work_dir: Path, use_sessions_index: bool = True):
+            self._emitted = False
+
+        def set_preferred_session(self, path: Path) -> None:
+            return None
+
+        def capture_state(self) -> dict:
+            return {}
+
+        def wait_for_events(self, state: dict, timeout: float):
+            if not sent_prompts or sent_prompts[-1][0] != "pane-new" or self._emitted:
+                return [], state
+            self._emitted = True
+            return [("user", "CCB_REQ_ID: req-1"), ("assistant", "done")], state
+
+    sessions = iter([_Session("pane-old"), _Session("pane-new")])
+    backend = _Backend({"pane-old": False, "pane-new": True})
+
+    monkeypatch.setenv("CCB_LASKD_PANE_CHECK_INTERVAL", "0")
+    monkeypatch.setattr(claude_mod, "load_project_session", lambda work_dir, instance=None: next(sessions))
+    monkeypatch.setattr(claude_mod, "get_backend_for_session", lambda data: backend)
+    monkeypatch.setattr(claude_mod, "ClaudeLogReader", _Reader)
+    monkeypatch.setattr(claude_mod, "is_done_text", lambda combined, req_id: "done" in combined)
+    monkeypatch.setattr(claude_mod, "extract_reply_for_req", lambda combined, req_id: combined)
+    monkeypatch.setattr(claude_mod, "notify_completion", lambda **kwargs: notifications.append(kwargs))
+    monkeypatch.setattr(claude_mod, "_write_log", lambda line: None)
+
+    req = ProviderRequest(
+        client_id="c1",
+        work_dir=str(tmp_path),
+        timeout_s=1.0,
+        quiet=False,
+        message="hello",
+        caller="codex",
+    )
+    task = QueuedTask(
+        request=req,
+        created_ms=0,
+        req_id="req-1",
+        done_event=threading.Event(),
+        cancel_event=threading.Event(),
+    )
+
+    result = ClaudeAdapter().handle_task(task)
+
+    assert result.status == "completed"
+    assert [pane for pane, _prompt in sent_prompts] == ["pane-old", "pane-new"]
+    assert notifications[0]["status"] == "completed"
+
+
+def test_opencode_adapter_recovers_after_dead_pane(monkeypatch, tmp_path: Path) -> None:
+    from askd.adapters import opencode as opencode_mod
+
+    notifications: list[dict] = []
+    sent_prompts: list[tuple[str, str]] = []
+
+    class _Session:
+        work_dir = str(tmp_path)
+        opencode_session_id_filter = None
+
+        def __init__(self, pane_id: str):
+            self._pane_id = pane_id
+            self.data = {"pane_id": pane_id, "terminal": "tmux"}
+
+        def ensure_pane(self):
+            return True, self._pane_id
+
+        def update_opencode_binding(self, *, session_id=None, project_id=None) -> None:
+            return None
+
+    class _Backend:
+        def __init__(self, alive_map: dict[str, bool]):
+            self.alive_map = alive_map
+
+        def send_text(self, pane_id: str, prompt: str) -> None:
+            sent_prompts.append((pane_id, prompt))
+
+        def is_alive(self, pane_id: str) -> bool:
+            return self.alive_map.get(pane_id, False)
+
+    class _Reader:
+        def __init__(self, work_dir: Path, project_id: str = "global", session_id_filter=None):
+            self._emitted = False
+            self.project_id = project_id
+
+        def capture_state(self) -> dict:
+            return {}
+
+        def wait_for_message(self, state: dict, timeout: float):
+            if not sent_prompts or sent_prompts[-1][0] != "pane-new" or self._emitted:
+                return "", state
+            self._emitted = True
+            return "done", state
+
+    sessions = iter([_Session("pane-old"), _Session("pane-new")])
+    backend = _Backend({"pane-old": False, "pane-new": True})
+
+    monkeypatch.setenv("CCB_OASKD_PANE_CHECK_INTERVAL", "0")
+    monkeypatch.setattr(opencode_mod, "load_project_session", lambda work_dir, instance=None: next(sessions))
+    monkeypatch.setattr(opencode_mod, "get_backend_for_session", lambda data: backend)
+    monkeypatch.setattr(opencode_mod, "OpenCodeLogReader", _Reader)
+    monkeypatch.setattr(opencode_mod, "is_done_text", lambda combined, req_id: "done" in combined)
+    monkeypatch.setattr(opencode_mod, "strip_done_text", lambda combined, req_id: combined)
+    monkeypatch.setattr(opencode_mod, "notify_completion", lambda **kwargs: notifications.append(kwargs))
+    monkeypatch.setattr(opencode_mod, "_write_log", lambda line: None)
+
+    req = ProviderRequest(
+        client_id="c1",
+        work_dir=str(tmp_path),
+        timeout_s=1.0,
+        quiet=False,
+        message="hello",
+        caller="codex",
+    )
+    task = QueuedTask(
+        request=req,
+        created_ms=0,
+        req_id="req-1",
+        done_event=threading.Event(),
+        cancel_event=threading.Event(),
+    )
+
+    result = opencode_mod.OpenCodeAdapter().handle_task(task)
+
+    assert result.status == "completed"
+    assert [pane for pane, _prompt in sent_prompts] == ["pane-old", "pane-new"]
+    assert notifications[0]["status"] == "completed"

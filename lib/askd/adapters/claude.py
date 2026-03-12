@@ -554,7 +554,7 @@ class ClaudeAdapter(BaseProviderAdapter):
 
         # Use structured Claude session logs only
         result = self._wait_for_response(
-            task, session, session_key, started_ms, log_reader, state, backend, pane_id, deadline
+            task, session, session_key, started_ms, log_reader, state, backend, pane_id, deadline, prompt
         )
         result.reply = self._postprocess_reply(req, result.reply)
         self._finalize_result(result, req, task)
@@ -610,7 +610,8 @@ class ClaudeAdapter(BaseProviderAdapter):
     def _wait_for_response(
         self, task: QueuedTask, session: Any, session_key: str,
         started_ms: int, log_reader: ClaudeLogReader, state: dict,
-        backend: Any, pane_id: str, deadline: Optional[float] = None
+        backend: Any, pane_id: str, deadline: Optional[float] = None,
+        prompt: str = "",
     ) -> ProviderResult:
         req = task.request
         if deadline is None:
@@ -628,6 +629,7 @@ class ClaudeAdapter(BaseProviderAdapter):
         tail_bytes = int(os.environ.get("CCB_LASKD_REBIND_TAIL_BYTES", str(2 * 1024 * 1024)))
         pane_check_interval = float(os.environ.get("CCB_LASKD_PANE_CHECK_INTERVAL", "2.0"))
         last_pane_check = time.time()
+        retried_after_pane_death = False
 
         while True:
             if task.cancel_event and task.cancel_event.is_set():
@@ -648,6 +650,20 @@ class ClaudeAdapter(BaseProviderAdapter):
                 except Exception:
                     alive = False
                 if not alive:
+                    if not retried_after_pane_death:
+                        recovered = self._recover_dead_pane(task, session, pane_id, prompt)
+                        if recovered is not None:
+                            session, backend, pane_id, log_reader, state = recovered
+                            retried_after_pane_death = True
+                            rebounded = False
+                            fallback_scan = False
+                            anchor_seen = False
+                            anchor_ms = None
+                            chunks = []
+                            anchor_grace_deadline = min(deadline, time.time() + 1.5) if deadline else (time.time() + 1.5)
+                            anchor_collect_grace = min(deadline, time.time() + 2.0) if deadline else (time.time() + 2.0)
+                            last_pane_check = time.time()
+                            continue
                     _write_log(f"[ERROR] Pane {pane_id} died req_id={task.req_id}")
                     return ProviderResult(
                         exit_code=1,
@@ -711,3 +727,42 @@ class ClaudeAdapter(BaseProviderAdapter):
             ),
         )
         return result
+
+    def _recover_dead_pane(
+        self,
+        task: QueuedTask,
+        session: Any,
+        pane_id: str,
+        prompt: str,
+    ) -> tuple[Any, Any, str, ClaudeLogReader, dict] | None:
+        req = task.request
+        try:
+            refreshed = load_project_session(Path(req.work_dir), req.instance)
+        except Exception:
+            refreshed = None
+        if not refreshed:
+            return None
+        ok, recovered_pane = refreshed.ensure_pane()
+        if not ok or not recovered_pane:
+            return None
+        recovered_pane = str(recovered_pane)
+        recovered_backend = get_backend_for_session(refreshed.data)
+        if not recovered_backend:
+            return None
+        try:
+            if not recovered_backend.is_alive(recovered_pane):
+                return None
+        except Exception:
+            return None
+        _write_log(
+            f"[WARN] Pane {pane_id} died req_id={task.req_id}; retrying with recovered pane {recovered_pane}"
+        )
+        recovered_reader = ClaudeLogReader(work_dir=Path(refreshed.work_dir))
+        if refreshed.claude_session_path:
+            try:
+                recovered_reader.set_preferred_session(Path(refreshed.claude_session_path))
+            except Exception:
+                pass
+        recovered_state = recovered_reader.capture_state()
+        recovered_backend.send_text(recovered_pane, prompt)
+        return refreshed, recovered_backend, recovered_pane, recovered_reader, recovered_state

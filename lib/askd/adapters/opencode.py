@@ -176,6 +176,7 @@ class OpenCodeAdapter(BaseProviderAdapter):
 
         pane_check_interval = float(os.environ.get("CCB_OASKD_PANE_CHECK_INTERVAL", "2.0"))
         last_pane_check = time.time()
+        retried_after_pane_death = False
 
         while True:
             # Check for cancellation
@@ -197,6 +198,14 @@ class OpenCodeAdapter(BaseProviderAdapter):
                 except Exception:
                     alive = False
                 if not alive:
+                    if not retried_after_pane_death:
+                        recovered = self._recover_dead_pane(task, session, pane_id, prompt)
+                        if recovered is not None:
+                            session, backend, pane_id, log_reader, state = recovered
+                            retried_after_pane_death = True
+                            last_pane_check = time.time()
+                            chunks = []
+                            continue
                     _write_log(f"[ERROR] Pane {pane_id} died during request req_id={task.req_id}")
                     return ProviderResult(
                         exit_code=1,
@@ -251,3 +260,48 @@ class OpenCodeAdapter(BaseProviderAdapter):
         )
         _write_log(f"[INFO] done provider=opencode req_id={task.req_id} exit={result.exit_code}")
         return result
+
+    def _recover_dead_pane(
+        self,
+        task: QueuedTask,
+        session: Any,
+        pane_id: str,
+        prompt: str,
+    ) -> tuple[Any, Any, str, OpenCodeLogReader, dict] | None:
+        req = task.request
+        try:
+            refreshed = load_project_session(Path(req.work_dir), req.instance)
+        except Exception:
+            refreshed = None
+        if not refreshed:
+            return None
+        ok, recovered_pane = refreshed.ensure_pane()
+        if not ok or not recovered_pane:
+            return None
+        recovered_pane = str(recovered_pane)
+        recovered_backend = get_backend_for_session(refreshed.data)
+        if not recovered_backend:
+            return None
+        try:
+            if not recovered_backend.is_alive(recovered_pane):
+                return None
+        except Exception:
+            return None
+        _write_log(
+            f"[WARN] Pane {pane_id} died during request req_id={task.req_id}; retrying with recovered pane {recovered_pane}"
+        )
+        recovered_reader = OpenCodeLogReader(
+            work_dir=Path(refreshed.work_dir),
+            project_id="global",
+            session_id_filter=refreshed.opencode_session_id_filter,
+        )
+        recovered_state = recovered_reader.capture_state()
+        try:
+            refreshed.update_opencode_binding(
+                session_id=recovered_state.get("session_id"),
+                project_id=str(getattr(recovered_reader, "project_id", "") or ""),
+            )
+        except Exception:
+            pass
+        recovered_backend.send_text(recovered_pane, prompt)
+        return refreshed, recovered_backend, recovered_pane, recovered_reader, recovered_state

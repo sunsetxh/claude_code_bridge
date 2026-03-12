@@ -296,7 +296,19 @@ def resolve_claude_session(work_dir: Path) -> Optional[ClaudeSessionResolution]:
             return resolved
         break
 
-    # 2) Registry via ccb_project_id
+    # 2) .claude-session file
+    session_file = find_project_session_file(work_dir, ".claude-session")
+    if session_file:
+        data = _read_json(session_file)
+        if data:
+            data.setdefault("work_dir", str(work_dir))
+            _normalize_session_binding(data, work_dir)
+            candidate = _select_resolution(data, session_file, None, "session_file")
+            resolved = consider(candidate)
+            if resolved:
+                return resolved
+
+    # 3) Registry via ccb_project_id
     try:
         pid = compute_ccb_project_id(work_dir)
     except Exception:
@@ -317,18 +329,6 @@ def resolve_claude_session(work_dir: Path) -> Optional[ClaudeSessionResolution]:
             data = _data_from_registry(unfiltered, work_dir)
             session_file = _session_file_from_record(unfiltered) or find_project_session_file(work_dir, ".claude-session")
             candidate = _select_resolution(data, session_file, unfiltered, "registry:project_unfiltered")
-            resolved = consider(candidate)
-            if resolved:
-                return resolved
-
-    # 3) .claude-session file
-    session_file = find_project_session_file(work_dir, ".claude-session")
-    if session_file:
-        data = _read_json(session_file)
-        if data:
-            data.setdefault("work_dir", str(work_dir))
-            _normalize_session_binding(data, work_dir)
-            candidate = _select_resolution(data, session_file, None, "session_file")
             resolved = consider(candidate)
             if resolved:
                 return resolved
