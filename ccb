@@ -2062,7 +2062,7 @@ class AILauncher:
 
     def _build_copilot_start_cmd(self) -> str:
         """Build command to start Copilot CLI in the pane."""
-        cmd = (os.environ.get("COPILOT_START_CMD") or "gh copilot").strip() or "gh copilot"
+        cmd = (os.environ.get("COPILOT_START_CMD") or "copilot").strip() or "copilot"
         resume_cmd = (os.environ.get("COPILOT_RESUME_CMD") or "").strip()
         if self.resume:
             # Copilot doesn't have session resume, but keep structure consistent
@@ -2374,8 +2374,8 @@ class AILauncher:
         runtime.mkdir(parents=True, exist_ok=True)
 
         env_overrides = self._provider_env_overrides("copilot")
-        start_cmd = self._build_env_prefix(env_overrides) + _build_export_path_cmd(self.script_dir / "bin") + self._build_copilot_start_cmd()
         pane_title_marker = "CCB-Copilot"
+        start_cmd = _build_pane_title_cmd(pane_title_marker) + self._build_env_prefix(env_overrides) + _build_export_path_cmd(self.script_dir / "bin") + self._build_copilot_start_cmd()
 
         backend = TmuxBackend()
 

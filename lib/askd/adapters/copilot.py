@@ -6,6 +6,8 @@ Wraps existing haskd_* modules to provide a consistent interface.
 from __future__ import annotations
 
 import os
+import json
+import shlex
 import time
 from pathlib import Path
 from typing import Any, Optional
@@ -45,6 +47,119 @@ def _tail_state_for_log(log_path_val: Optional[Path], *, tail_bytes: int) -> dic
         size = 0
     offset = max(0, size - max(0, int(tail_bytes)))
     return {"pane_log_path": log_path_val, "offset": offset}
+
+
+def _read_workspace_cwd(path: Path) -> str:
+    try:
+        for raw_line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+            line = raw_line.strip()
+            if line.startswith("cwd:"):
+                return line.split(":", 1)[1].strip()
+    except Exception:
+        return ""
+    return ""
+
+
+def _latest_copilot_resume_id(work_dir: Path) -> str:
+    root = Path.home() / ".copilot" / "session-state"
+    if not root.is_dir():
+        return ""
+
+    best_id = ""
+    best_mtime = -1.0
+    target = str(work_dir)
+    try:
+        target = str(work_dir.resolve())
+    except Exception:
+        target = str(work_dir)
+
+    for entry in root.iterdir():
+        if not entry.is_dir():
+            continue
+        workspace = entry / "workspace.yaml"
+        events = entry / "events.jsonl"
+        if not workspace.is_file() or not events.is_file():
+            continue
+        cwd = _read_workspace_cwd(workspace)
+        if not cwd:
+            continue
+        try:
+            cwd = str(Path(cwd).resolve())
+        except Exception:
+            cwd = str(Path(cwd))
+        if cwd != target:
+            continue
+        try:
+            mtime = events.stat().st_mtime
+        except OSError:
+            mtime = 0.0
+        if mtime >= best_mtime:
+            best_mtime = mtime
+            best_id = entry.name
+    return best_id
+
+
+def _build_interactive_resume_cmd(session: Any, resume_id: str, prompt: str) -> str:
+    base = str(session.start_cmd or "").strip()
+    if not base:
+        base = (os.environ.get("COPILOT_START_CMD") or "copilot").strip() or "copilot"
+    return f"{base} --resume={shlex.quote(resume_id)} -i {shlex.quote(prompt)}"
+
+
+def _resume_events_path(resume_id: str) -> Path:
+    return Path.home() / ".copilot" / "session-state" / resume_id / "events.jsonl"
+
+
+def _capture_jsonl_state(path: Path) -> dict:
+    offset = 0
+    if path.exists():
+        try:
+            offset = path.stat().st_size
+        except OSError:
+            offset = 0
+    return {"path": path, "offset": offset}
+
+
+def _read_jsonl_events_since(state: dict) -> tuple[list[tuple[str, str]], dict]:
+    path = state.get("path")
+    if not isinstance(path, Path) or not path.exists():
+        return [], state
+    offset = int(state.get("offset") or 0)
+    try:
+        size = path.stat().st_size
+    except OSError:
+        return [], state
+    if size < offset:
+        offset = 0
+    if size == offset:
+        return [], {"path": path, "offset": offset}
+    try:
+        with path.open("rb") as handle:
+            handle.seek(offset)
+            data = handle.read()
+    except OSError:
+        return [], state
+    new_offset = offset + len(data)
+    events: list[tuple[str, str]] = []
+    for raw_line in data.decode("utf-8", errors="replace").splitlines():
+        raw_line = raw_line.strip()
+        if not raw_line:
+            continue
+        try:
+            obj = json.loads(raw_line)
+        except Exception:
+            continue
+        typ = str(obj.get("type") or "")
+        data_obj = obj.get("data") if isinstance(obj.get("data"), dict) else {}
+        if typ == "user.message":
+            content = str(data_obj.get("content") or "")
+            if content:
+                events.append(("user", content))
+        elif typ == "assistant.message":
+            content = str(data_obj.get("content") or "")
+            if content:
+                events.append(("assistant", content))
+    return events, {"path": path, "offset": new_offset}
 
 
 class CopilotAdapter(BaseProviderAdapter):
@@ -119,11 +234,34 @@ class CopilotAdapter(BaseProviderAdapter):
         elif session.runtime_dir:
             pane_log_path = session.runtime_dir / "pane.log"
 
-        log_reader = CopilotLogReader(work_dir=Path(session.work_dir), pane_log_path=pane_log_path)
-        state = log_reader.capture_state()
-
         prompt = wrap_copilot_prompt(req.message, task.req_id)
-        backend.send_text(pane_id, prompt)
+        log_reader = CopilotLogReader(work_dir=Path(session.work_dir), pane_log_path=pane_log_path)
+        resume_id = _latest_copilot_resume_id(Path(session.work_dir))
+        used_resume_launch = False
+        event_state: dict | None = None
+        if resume_id and hasattr(backend, "respawn_pane"):
+            try:
+                event_state = _capture_jsonl_state(_resume_events_path(resume_id))
+                launch_cmd = _build_interactive_resume_cmd(session, resume_id, prompt)
+                backend.respawn_pane(pane_id, cmd=launch_cmd, cwd=session.work_dir, remain_on_exit=True)
+                used_resume_launch = True
+                _write_log(
+                    f"[INFO] provider=copilot req_id={task.req_id} launched via resume -i session_id={resume_id}"
+                )
+                ensure = getattr(backend, "ensure_pane_log", None)
+                if callable(ensure):
+                    try:
+                        ensure(pane_id)
+                    except Exception:
+                        pass
+            except Exception as exc:
+                _write_log(
+                    f"[WARN] provider=copilot req_id={task.req_id} resume -i launch failed: {exc}; falling back to send_text"
+                )
+        if not used_resume_launch:
+            backend.send_text(pane_id, prompt)
+
+        state = log_reader.capture_state()
 
         deadline = None if float(req.timeout_s) < 0.0 else (time.time() + float(req.timeout_s))
         chunks: list[str] = []
@@ -174,9 +312,13 @@ class CopilotAdapter(BaseProviderAdapter):
                     )
                 last_pane_check = time.time()
 
-            events, state = log_reader.wait_for_events(state, wait_step)
+            if used_resume_launch and event_state is not None:
+                time.sleep(wait_step)
+                events, event_state = _read_jsonl_events_since(event_state)
+            else:
+                events, state = log_reader.wait_for_events(state, wait_step)
             if not events:
-                if (not rebounded) and (not anchor_seen) and time.time() >= anchor_grace_deadline:
+                if (not used_resume_launch) and (not rebounded) and (not anchor_seen) and time.time() >= anchor_grace_deadline:
                     log_reader = CopilotLogReader(work_dir=Path(session.work_dir), pane_log_path=pane_log_path)
                     state = _tail_state_for_log(pane_log_path, tail_bytes=tail_bytes)
                     fallback_scan = True
