@@ -23,6 +23,7 @@ class ProviderClientSpec:
     session_filename: str
     daemon_bin_name: str
     daemon_module: str
+    provider_name: str = ""  # For unified askd: provider field in request payload
 
 
 CASKD_SPEC = ProviderDaemonSpec(
@@ -84,6 +85,7 @@ CASK_CLIENT_SPEC = ProviderClientSpec(
     session_filename=".codex-session",
     daemon_bin_name="askd",
     daemon_module="askd.daemon",
+    provider_name="codex",
 )
 
 
@@ -96,11 +98,12 @@ GASK_CLIENT_SPEC = ProviderClientSpec(
     session_filename=".gemini-session",
     daemon_bin_name="askd",
     daemon_module="askd.daemon",
+    provider_name="gemini",
 )
 
 
 OASK_CLIENT_SPEC = ProviderClientSpec(
-    protocol_prefix="oask",
+    protocol_prefix="ask",
     enabled_env="CCB_OASKD",
     autostart_env_primary="CCB_OASKD_AUTOSTART",
     autostart_env_legacy="CCB_AUTO_OASKD",
@@ -108,6 +111,7 @@ OASK_CLIENT_SPEC = ProviderClientSpec(
     session_filename=".opencode-session",
     daemon_bin_name="askd",
     daemon_module="askd.daemon",
+    provider_name="opencode",
 )
 
 
@@ -120,6 +124,7 @@ LASK_CLIENT_SPEC = ProviderClientSpec(
     session_filename=".claude-session",
     daemon_bin_name="askd",
     daemon_module="askd.daemon",
+    provider_name="claude",
 )
 
 
@@ -132,6 +137,7 @@ DASK_CLIENT_SPEC = ProviderClientSpec(
     session_filename=".droid-session",
     daemon_bin_name="askd",
     daemon_module="askd.daemon",
+    provider_name="droid",
 )
 
 
@@ -155,6 +161,7 @@ HASK_CLIENT_SPEC = ProviderClientSpec(
     session_filename=".copilot-session",
     daemon_bin_name="askd",
     daemon_module="askd.daemon",
+    provider_name="copilot",
 )
 
 
@@ -178,6 +185,7 @@ BASK_CLIENT_SPEC = ProviderClientSpec(
     session_filename=".codebuddy-session",
     daemon_bin_name="askd",
     daemon_module="askd.daemon",
+    provider_name="codebuddy",
 )
 
 
@@ -200,6 +208,7 @@ QASK_CLIENT_SPEC = ProviderClientSpec(
     session_filename=".qwen-session",
     daemon_bin_name="askd",
     daemon_module="askd.daemon",
+    provider_name="qwen",
 )
 
 
@@ -223,6 +232,7 @@ CURSOR_CLIENT_SPEC = ProviderClientSpec(
     session_filename=".cursor-session",
     daemon_bin_name="askd",
     daemon_module="askd.daemon",
+    provider_name="cursor",
 )
 
 

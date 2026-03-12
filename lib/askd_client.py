@@ -57,8 +57,9 @@ def resolve_work_dir(
         session_path = Path(expanded).absolute()
 
     if session_path.name != spec.session_filename:
+        target = spec.provider_name or spec.protocol_prefix
         raise ValueError(
-            f"Invalid session file for {spec.protocol_prefix}: expected filename {spec.session_filename}, got {session_path.name}"
+            f"Invalid session file for {target}: expected filename {spec.session_filename}, got {session_path.name}"
         )
     if not session_path.exists():
         raise ValueError(f"Session file not found: {session_path}")
@@ -208,6 +209,11 @@ def try_daemon_request(
             project_state = Path(run_dir) / state_filename
             if project_state.exists():
                 st = read_state(state_file=project_state)
+            # Compatibility: fallback to oaskd.json for OpenCode
+            elif not st and spec.protocol_prefix == "ask" and spec.provider_name == "opencode":
+                legacy_state = Path(run_dir) / "oaskd.json"
+                if legacy_state.exists():
+                    st = read_state(state_file=legacy_state)
 
     if not st:
         return None
@@ -237,9 +243,20 @@ def try_daemon_request(
         no_wrap = os.environ.get("CCB_NO_WRAP", "").strip()
         if no_wrap in ("1", "true", "yes"):
             payload["no_wrap"] = True
-        caller = os.environ.get("CCB_CALLER", "").strip()
-        if caller:
+
+        # Unified askd requires provider and caller fields
+        if spec.protocol_prefix == "ask":
+            if spec.provider_name:
+                payload["provider"] = spec.provider_name
+            caller = os.environ.get("CCB_CALLER", "").strip()
+            if not caller:
+                caller = "manual"  # Default caller for unified askd
             payload["caller"] = caller
+        else:
+            # Legacy provider-specific daemons: caller is optional
+            caller = os.environ.get("CCB_CALLER", "").strip()
+            if caller:
+                payload["caller"] = caller
         connect_timeout = min(1.0, max(0.1, float(timeout)))
         with socket.create_connection((host, port), timeout=connect_timeout) as sock:
             sock.settimeout(0.5)
