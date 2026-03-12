@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### 🚀 New Provider: Cursor Agent
+
+- **Cursor Integration**: Added support for Cursor Agent as a new provider
+- **Available Commands**:
+  - `ask cursor <message>` - Send prompts to Cursor Agent via unified daemon
+  - `ccb-ping cursor` - Test Cursor connectivity
+  - `uping` - Standalone Cursor connectivity test
+  - `upend` - View Cursor session metadata and chat directory info
+- **Automation-Ready**: Uses `cursor-agent --print --output-format json` for structured output
+- **Session Discovery**: Integrates with Cursor's native chat storage at `~/.cursor/chats/`
+
+**Note**: Cursor provider requires `cursor-agent` CLI to be installed and available in PATH. The `ccb cursor` launcher is not yet supported; use `ask cursor` instead.
+
 ## v5.2.8 (2026-03-07)
 
 ### 📝 Documentation

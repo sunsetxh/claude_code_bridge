@@ -1,0 +1,73 @@
+#!/usr/bin/env python3
+"""
+uask - Cursor Agent CLI wrapper (legacy compatibility)
+
+This is a thin wrapper for Cursor Agent subprocess communication.
+For new code, use 'ask cursor' with unified askd daemon instead.
+"""
+
+from __future__ import annotations
+
+import os
+import sys
+from pathlib import Path
+
+script_dir = Path(__file__).resolve().parent
+lib_dir = script_dir.parent / "lib"
+sys.path.insert(0, str(lib_dir))
+
+from compat import setup_windows_encoding
+setup_windows_encoding()
+
+from cursor_comm import CursorCommunicator
+
+
+def main() -> int:
+    if len(sys.argv) < 2:
+        print("Usage: uask [--sync] [--timeout N] <message>", file=sys.stderr)
+        return 1
+
+    message = ""
+    timeout = 120.0
+    sync_mode = False
+
+    i = 1
+    while i < len(sys.argv):
+        arg = sys.argv[i]
+        if arg == "--sync":
+            sync_mode = True
+        elif arg == "--timeout" and i + 1 < len(sys.argv):
+            try:
+                timeout = float(sys.argv[i + 1])
+                i += 1
+            except ValueError:
+                print("[ERROR] --timeout requires a number", file=sys.stderr)
+                return 1
+        elif arg.startswith("-"):
+            print(f"[WARN] Unknown option: {arg}", file=sys.stderr)
+        else:
+            message = arg
+        i += 1
+
+    if not message and not sys.stdin.isatty():
+        message = sys.stdin.read()
+
+    if not message:
+        print("[ERROR] Message cannot be empty", file=sys.stderr)
+        return 1
+
+    work_dir = Path.cwd()
+    communicator = CursorCommunicator(work_dir=work_dir)
+
+    success, reply, metadata = communicator.send(prompt=message, timeout_s=timeout)
+
+    if reply:
+        print(reply, end="" if not reply.endswith("\n") else "\n")
+
+    if success:
+        return 0
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

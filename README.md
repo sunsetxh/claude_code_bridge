@@ -3,7 +3,7 @@
 # Claude Code Bridge (ccb) v5.2.6
 
 **Multi-Model Collaboration via Split-Pane Terminal**
-**Claude · Codex · Gemini · OpenCode · Droid**
+**Claude · Codex · Gemini · OpenCode · Droid · Copilot · Cursor**
 **Lightweight async messaging — full CLI power, every interaction visible**
 
 <p>
@@ -185,7 +185,9 @@ See [CHANGELOG.md](CHANGELOG.md) for full details.
 | `cping`, `gping`, `oping`, `dping`, `lping` | `ccb-ping <provider>` |
 | `cpend`, `gpend`, `opend`, `dpend`, `lpend` | `pend <provider> [N]` |
 
-**Supported providers:** `gemini`, `codex`, `opencode`, `droid`, `claude`, `copilot`
+**Supported providers:** `gemini`, `codex`, `opencode`, `droid`, `claude`, `copilot`, `cursor`
+
+**Cursor Agent Note:** Cursor uses subprocess automation (`cursor-agent --print --output-format json`) rather than pane-based communication. Use `ask cursor` for prompts and `uping`/`upend` for session info. The `ccb cursor` launcher is not yet available.
 
 **🪟 Windows WezTerm + PowerShell Support:**
 - Full native Windows support with WezTerm terminal
@@ -406,7 +408,8 @@ ccb -a -r codex gemini opencode claude  # Auto + resume for all providers
 tmux tip: CCB's tmux status/pane theming is enabled only while CCB is running.
 tmux tip: press `Ctrl+b` then `Space` to cycle tmux layouts. You can press it repeatedly to keep switching layouts.
 
-Layout rule: the last provider runs in the current pane. Extras are ordered as `[cmd?, reversed providers]`; the first extra goes to the top-right, then the left column fills top-to-bottom, then the right column fills top-to-bottom. Examples: 4 panes = left2/right2, 5 panes = left2/right3.
+Layout rule: the layout is deterministic, but it does not follow input order directly. The last provider becomes the anchor and runs in the current pane. Extra panes are built from `[cmd?, reversed(providers[:-1])]`: the first extra goes to the top-right, then the left column fills top-to-bottom, then the right column fills top-to-bottom. Examples: 4 panes = left2/right2, 5 panes = left2/right3.
+Why it can feel irregular: `cmd` inserts ahead of providers, single-provider startup may reuse an existing pane instead of splitting, and reversing `providers[:-1]` means `ccb a b c d` and `ccb d c b a` intentionally produce different layouts.
 Note: `ccb up` is removed; use `ccb ...` or configure `ccb.config`.
 ```
 

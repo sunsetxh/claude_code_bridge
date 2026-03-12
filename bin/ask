@@ -6,7 +6,7 @@ Usage:
     ask <provider> [options] <message>
 
 Providers:
-    gemini, codex, opencode, droid, claude, copilot, codebuddy, qwen
+    gemini, codex, opencode, droid, claude, copilot, codebuddy, qwen, cursor
 
 Modes:
     Default (async):  Background task with hook callback
@@ -60,6 +60,7 @@ PROVIDER_DAEMONS = {
     "copilot": "hask",
     "codebuddy": "bask",
     "qwen": "qask",
+    "cursor": "uask",
 }
 
 CALLER_SESSION_FILES = {
@@ -71,6 +72,7 @@ CALLER_SESSION_FILES = {
     "copilot": ".copilot-session",
     "codebuddy": ".codebuddy-session",
     "qwen": ".qwen-session",
+    "cursor": ".cursor-session",
 }
 
 CALLER_PANE_ENV_HINTS = {
@@ -424,6 +426,109 @@ def _send_via_unified_daemon(
     return EXIT_ERROR
 
 
+def _try_unified_daemon_silent(
+    provider: str,
+    message: str,
+    timeout: float,
+    no_wrap: bool,
+    caller: str,
+) -> tuple[int, str]:
+    """Try unified daemon without printing reply. Returns (exit_code, reply)."""
+    import json
+    import socket
+
+    from askd_runtime import state_file_path
+    import askd_rpc
+
+    state_file = state_file_path("askd.json")
+    state = askd_rpc.read_state(state_file)
+    if not state:
+        if _maybe_start_unified_daemon():
+            state = askd_rpc.read_state(state_file)
+        if not state:
+            return EXIT_ERROR, ""
+
+    host = state.get("connect_host") or state.get("host") or "127.0.0.1"
+    port = int(state.get("port") or 0)
+    token = state.get("token") or ""
+    raw_work_dir = state.get("work_dir")
+    daemon_work_dir = raw_work_dir.strip() if isinstance(raw_work_dir, str) and raw_work_dir.strip() else ""
+    if not daemon_work_dir or not Path(daemon_work_dir).is_dir():
+        daemon_work_dir = os.getcwd()
+
+    if not port:
+        return EXIT_ERROR, ""
+
+    req = {
+        "type": "ask.request",
+        "v": 1,
+        "id": make_task_id(),
+        "token": token,
+        "provider": provider,
+        "work_dir": daemon_work_dir,
+        "timeout_s": timeout,
+        "message": message,
+        "no_wrap": no_wrap,
+        "caller": caller,
+    }
+
+    request_sent = False
+    for attempt in range(2):
+        sock = None
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(timeout + 10 if timeout > 0 else 3610)
+            sock.connect((host, port))
+            request_sent = True
+            sock.sendall((json.dumps(req) + "\n").encode("utf-8"))
+
+            data = b""
+            while True:
+                chunk = sock.recv(4096)
+                if not chunk:
+                    break
+                data += chunk
+                if b"\n" in data:
+                    break
+
+            resp = json.loads(data.decode("utf-8").strip())
+            exit_code = int(resp.get("exit_code") or 0)
+            reply = resp.get("reply") or ""
+            return exit_code, reply
+        except (ConnectionRefusedError, ConnectionResetError):
+            if attempt == 0 and not request_sent:
+                if _maybe_start_unified_daemon():
+                    state = askd_rpc.read_state(state_file)
+                    if state:
+                        host = state.get("connect_host") or state.get("host") or "127.0.0.1"
+                        port = int(state.get("port") or 0)
+                        token = state.get("token") or ""
+                        req["token"] = token
+                        continue
+            return EXIT_ERROR, ""
+        except OSError:
+            if attempt == 0 and not request_sent:
+                if _maybe_start_unified_daemon():
+                    state = askd_rpc.read_state(state_file)
+                    if state:
+                        host = state.get("connect_host") or state.get("host") or "127.0.0.1"
+                        port = int(state.get("port") or 0)
+                        token = state.get("token") or ""
+                        req["token"] = token
+                        continue
+            return EXIT_ERROR, ""
+        except Exception:
+            return EXIT_ERROR, ""
+        finally:
+            if sock:
+                try:
+                    sock.close()
+                except Exception:
+                    pass
+
+    return EXIT_ERROR, ""
+
+
 def _env_bool(name: str, default: bool = False) -> bool:
     val = (os.environ.get(name) or "").strip().lower()
     if not val:
@@ -484,7 +589,7 @@ def _usage() -> None:
     print("Usage: ask <provider> [options] <message>", file=sys.stderr)
     print("", file=sys.stderr)
     print("Providers:", file=sys.stderr)
-    print("  gemini, codex, opencode, droid, claude, copilot, codebuddy, qwen", file=sys.stderr)
+    print("  gemini, codex, opencode, droid, claude, copilot, codebuddy, qwen, cursor", file=sys.stderr)
     print("", file=sys.stderr)
     print("Options:", file=sys.stderr)
     print("  -h, --help              Show this help message", file=sys.stderr)
@@ -570,7 +675,8 @@ def main(argv: list[str]) -> int:
             # Fall through to legacy path below
 
         # Legacy daemon path for notify mode
-        cmd = [daemon_cmd, "--sync"]
+        daemon_path = script_dir / daemon_cmd
+        cmd = [sys.executable, str(daemon_path), "--sync"]
         if no_wrap:
             cmd.append("--no-wrap")
         try:
@@ -592,9 +698,34 @@ def main(argv: list[str]) -> int:
     if foreground_mode:
         if _use_unified_daemon():
             caller = _require_caller()
-            return _send_via_unified_daemon(provider, message, timeout, no_wrap, caller)
+            # For Cursor provider, use silent helper to avoid leaking daemon errors
+            if provider == "cursor":
+                unified_exit, unified_reply = _try_unified_daemon_silent(provider, message, timeout, no_wrap, caller)
+                if unified_exit == 0:
+                    # Unified daemon succeeded - print the reply and return
+                    if unified_reply:
+                        print(unified_reply, end="" if not unified_reply.endswith("\n") else "\n")
+                    return unified_exit
+                # Unified daemon failed for Cursor - fall back to repo-local uask wrapper
+                daemon_path = script_dir / daemon_cmd
+                cmd = [sys.executable, str(daemon_path), "--sync", "--timeout", str(timeout)]
+                if no_wrap:
+                    cmd.append("--no-wrap")
+                env = os.environ.copy()
+                env["CCB_CALLER"] = caller
+                try:
+                    result = subprocess.run(cmd, input=message, text=True, env=env)
+                    return result.returncode
+                except Exception as e:
+                    print(f"[ERROR] {e}", file=sys.stderr)
+                    return EXIT_ERROR
+            else:
+                # Other providers: use normal unified daemon path (prints errors)
+                return _send_via_unified_daemon(provider, message, timeout, no_wrap, caller)
         else:
-            cmd = [daemon_cmd, "--sync", "--timeout", str(timeout)]
+            # Resolve daemon_cmd to repo-local wrapper (e.g., uask -> bin/uask)
+            daemon_path = script_dir / daemon_cmd
+            cmd = [sys.executable, str(daemon_path), "--sync", "--timeout", str(timeout)]
             if no_wrap and provider == "claude":
                 cmd.append("--no-wrap")
             env = os.environ.copy()

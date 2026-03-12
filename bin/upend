@@ -1,0 +1,238 @@
+#!/usr/bin/env python3
+"""
+upend - View Cursor Agent session info
+
+Note: Cursor stores conversation history in SQLite format (~/.cursor/chats/<chat-id>/store.db).
+This tool provides session discovery and metadata; for full conversation history,
+use the Cursor UI or `cursor-agent --resume <chat-id>`.
+"""
+
+import sys
+import os
+import json
+import argparse
+import subprocess
+from pathlib import Path
+from datetime import datetime
+
+script_dir = Path(__file__).resolve().parent
+lib_dir = script_dir.parent / "lib"
+sys.path.insert(0, str(lib_dir))
+from compat import setup_windows_encoding
+setup_windows_encoding()
+
+from cli_output import EXIT_ERROR, EXIT_NO_REPLY, EXIT_OK
+
+
+def _debug_enabled() -> bool:
+    return (os.environ.get("CCB_DEBUG") in ("1", "true", "yes")) or (os.environ.get("UPEND_DEBUG") in ("1", "true", "yes"))
+
+
+def _debug(message: str) -> None:
+    if not _debug_enabled():
+        return
+    print(f"[DEBUG] {message}", file=sys.stderr)
+
+
+def _get_latest_chat_dir() -> Path | None:
+    """Find the most recently modified Cursor chat directory."""
+    chats_dir = Path.home() / ".cursor" / "chats"
+    if not chats_dir.exists():
+        return None
+
+    try:
+        chat_dirs = [d for d in chats_dir.iterdir() if d.is_dir()]
+        if not chat_dirs:
+            return None
+        return max(chat_dirs, key=lambda p: p.stat().st_mtime)
+    except Exception as e:
+        _debug(f"Failed to scan chats directory: {e}")
+        return None
+
+
+def _get_chat_subdirs(chat_dir: Path) -> list[Path]:
+    """Get subdirectories within a chat directory (these are the actual conversations)."""
+    try:
+        return [d for d in chat_dir.iterdir() if d.is_dir()]
+    except Exception as e:
+        _debug(f"Failed to scan chat subdirectories: {e}")
+        return []
+
+
+def _format_timestamp(path: Path) -> str:
+    """Format modification time as a human-readable string."""
+    try:
+        mtime = path.stat().st_mtime
+        dt = datetime.fromtimestamp(mtime)
+        return dt.strftime("%Y-%m-%d %H:%M:%S")
+    except Exception:
+        return "unknown"
+
+
+def _list_recent_chats(limit: int = 5) -> list[dict]:
+    """List recent Cursor chat sessions."""
+    chats_dir = Path.home() / ".cursor" / "chats"
+    if not chats_dir.exists():
+        return []
+
+    try:
+        chat_dirs = [
+            d for d in chats_dir.iterdir()
+            if d.is_dir() and not d.name.startswith(".")
+        ]
+        # Sort by modification time
+        chat_dirs.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+
+        result = []
+        for chat_dir in chat_dirs[:limit]:
+            subdirs = _get_chat_subdirs(chat_dir)
+            result.append({
+                "chat_id": chat_dir.name,
+                "modified": _format_timestamp(chat_dir),
+                "conversation_count": len(subdirs),
+                "path": str(chat_dir),
+            })
+        return result
+    except Exception as e:
+        _debug(f"Failed to list chats: {e}")
+        return []
+
+
+def _read_ccb_session(work_dir: Path) -> dict | None:
+    """Read CCB cursor session file if exists."""
+    from session_utils import find_project_session_file
+
+    session_file = find_project_session_file(work_dir, ".cursor-session")
+    if not session_file:
+        return None
+
+    try:
+        with session_file.open("r", encoding="utf-8-sig") as f:
+            return json.load(f)
+    except Exception as e:
+        _debug(f"Failed to read session file: {e}")
+        return None
+
+
+def main(argv: list[str]) -> int:
+    try:
+        parser = argparse.ArgumentParser(
+            prog="upend",
+            description="View Cursor Agent session info and chat metadata",
+            add_help=True
+        )
+        parser.add_argument(
+            "n",
+            nargs="?",
+            type=int,
+            default=1,
+            help="Show info for the latest N chat sessions"
+        )
+        parser.add_argument(
+            "--list",
+            action="store_true",
+            help="List recent Cursor chat sessions"
+        )
+        parser.add_argument(
+            "--path",
+            action="store_true",
+            help="Show path to latest chat directory"
+        )
+        parser.add_argument(
+            "--session",
+            action="store_true",
+            help="Show CCB session info if available"
+        )
+        args = parser.parse_args(argv[1:])
+
+        n = max(1, int(args.n or 1))
+
+        # List recent chats
+        if args.list:
+            chats = _list_recent_chats(n)
+            if not chats:
+                print("No Cursor chat sessions found", file=sys.stderr)
+                return EXIT_NO_REPLY
+
+            for i, chat in enumerate(chats):
+                print(f"Chat {i+1}: {chat['chat_id'][:16]}...")
+                print(f"  Modified: {chat['modified']}")
+                print(f"  Conversations: {chat['conversation_count']}")
+                print(f"  Path: {chat['path']}")
+                if i < len(chats) - 1:
+                    print("---")
+            return EXIT_OK
+
+        # Show path only
+        if args.path:
+            latest = _get_latest_chat_dir()
+            if not latest:
+                print("No Cursor chat sessions found", file=sys.stderr)
+                return EXIT_NO_REPLY
+            print(str(latest))
+            return EXIT_OK
+
+        # Show CCB session info
+        if args.session:
+            work_dir = Path.cwd()
+            session = _read_ccb_session(work_dir)
+            if not session:
+                print("No CCB cursor session found for current directory", file=sys.stderr)
+                return EXIT_NO_REPLY
+
+            print("CCB Cursor Session:")
+            for key, value in session.items():
+                if key.startswith("_"):
+                    continue
+                print(f"  {key}: {value}")
+            return EXIT_OK
+
+        # Default: show latest chat info
+        latest = _get_latest_chat_dir()
+        if not latest:
+            print("No Cursor chat sessions found", file=sys.stderr)
+            print("\nHint: Use 'cursor-agent' to start a conversation.", file=sys.stderr)
+            return EXIT_NO_REPLY
+
+        print(f"Latest Cursor chat: {latest.name}")
+        print(f"  Modified: {_format_timestamp(latest)}")
+        print(f"  Path: {latest}")
+
+        subdirs = _get_chat_subdirs(latest)
+        if subdirs:
+            print(f"  Conversations: {len(subdirs)}")
+        else:
+            print("  Conversations: (none)")
+
+        print("\nNote: Cursor stores conversation history in SQLite format.")
+        print("For full conversation history, open Cursor UI or use:")
+        print(f"  cursor-agent --resume {latest.name}")
+
+        # Try to get conversation count via cursor-agent ls
+        try:
+            result = subprocess.run(
+                ["cursor-agent", "--help"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            # Check if ls command exists
+            if "ls" in result.stdout or "resume" in result.stdout:
+                print("\nTo list or resume sessions:")
+                print(f"  cursor-agent ls")
+                print(f"  cursor-agent --resume {latest.name}")
+        except Exception:
+            pass
+
+        return EXIT_OK
+
+    except Exception as exc:
+        if _debug_enabled():
+            import traceback
+            traceback.print_exc()
+        print(f"[ERROR] execution failed: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

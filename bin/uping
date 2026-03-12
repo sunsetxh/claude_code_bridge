@@ -1,0 +1,104 @@
+#!/usr/bin/env python3
+"""
+uping - Test Cursor Agent connectivity
+"""
+
+import sys
+import os
+import subprocess
+import argparse
+from pathlib import Path
+
+script_dir = Path(__file__).resolve().parent
+lib_dir = script_dir.parent / "lib"
+sys.path.insert(0, str(lib_dir))
+from compat import setup_windows_encoding
+setup_windows_encoding()
+
+
+def _find_cursor_agent() -> str | None:
+    """Find cursor-agent binary in PATH."""
+    import shutil
+    return shutil.which("cursor-agent")
+
+
+def _ping_cursor_agent() -> tuple[bool, str]:
+    """Test cursor-agent availability and basic functionality."""
+    cursor_bin = _find_cursor_agent()
+    if not cursor_bin:
+        return False, "cursor-agent not found in PATH"
+
+    try:
+        # Try to get version/status
+        result = subprocess.run(
+            [cursor_bin, "--version"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode == 0:
+            version = result.stdout.strip() or "version available"
+            return True, f"Cursor Agent OK ({version})"
+
+        # Try models command as fallback
+        result = subprocess.run(
+            [cursor_bin, "--list-models"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode == 0:
+            return True, "Cursor Agent OK (models listable)"
+
+        return False, f"Cursor Agent error: {result.stderr.strip() or 'unknown error'}"
+    except FileNotFoundError:
+        return False, "cursor-agent not found"
+    except subprocess.TimeoutExpired:
+        return False, "cursor-agent timeout"
+    except Exception as e:
+        return False, f"cursor-agent test failed: {e}"
+
+
+def _check_cursor_chats_dir() -> tuple[bool, str]:
+    """Check if Cursor chats directory exists."""
+    chats_dir = Path.home() / ".cursor" / "chats"
+    if not chats_dir.exists():
+        return False, f"Cursor chats directory not found: {chats_dir}"
+    try:
+        chat_count = len([d for d in chats_dir.iterdir() if d.is_dir()])
+        return True, f"Cursor chats directory OK ({chat_count} chats)"
+    except Exception as e:
+        return False, f"Cursor chats directory error: {e}"
+
+
+def main():
+    try:
+        parser = argparse.ArgumentParser(prog="uping", add_help=True)
+        parser.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
+        args = parser.parse_args()
+
+        messages = []
+
+        # Test cursor-agent binary
+        healthy, msg = _ping_cursor_agent()
+        messages.append((healthy, msg))
+
+        # Test chats directory
+        if args.verbose:
+            dir_ok, dir_msg = _check_cursor_chats_dir()
+            messages.append((dir_ok, dir_msg))
+
+        # Print results
+        all_healthy = all(ok for ok, _ in messages)
+        for ok, msg in messages:
+            print(msg)
+
+        return 0 if all_healthy else 1
+
+    except Exception as e:
+        print(f"[ERROR] Cursor connectivity test failed: {e}")
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

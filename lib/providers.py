@@ -203,6 +203,29 @@ QASK_CLIENT_SPEC = ProviderClientSpec(
 )
 
 
+# ── Cursor (Cursor AI Agent CLI) ────────────────────────────────────────────────
+CURSOR_SPEC = ProviderDaemonSpec(
+    daemon_key="cursor",
+    protocol_prefix="cursor",
+    state_file_name="cursor.json",
+    log_file_name="cursor.log",
+    idle_timeout_env="CCB_CURSOR_IDLE_TIMEOUT_S",
+    lock_name="cursor",
+)
+
+
+CURSOR_CLIENT_SPEC = ProviderClientSpec(
+    protocol_prefix="cursor",
+    enabled_env="CCB_CURSOR",
+    autostart_env_primary="CCB_CURSOR_AUTOSTART",
+    autostart_env_legacy="CCB_AUTO_CURSOR",
+    state_file_env="CCB_CURSOR_STATE_FILE",
+    session_filename=".cursor-session",
+    daemon_bin_name="askd",
+    daemon_module="askd.daemon",
+)
+
+
 # ── Multi-instance provider utilities ────────────────────────────────────────
 
 

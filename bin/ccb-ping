@@ -6,7 +6,7 @@ Usage:
     ccb-ping <provider> [--session-file FILE] [--autostart]
 
 Providers:
-    gemini, codex, opencode, droid, claude, copilot
+    gemini, codex, opencode, droid, claude, copilot, cursor
 """
 
 import sys
@@ -30,13 +30,14 @@ PROVIDER_COMMS = {
     "droid": ("droid_comm", "DroidCommunicator"),
     "claude": ("claude_comm", "ClaudeCommunicator"),
     "copilot": ("copilot_comm", "CopilotCommunicator"),
+    "cursor": ("cursor_comm", "CursorCommunicator"),
 }
 
 def _usage():
     print("Usage: ccb-ping <provider> [--session-file FILE] [--autostart]", file=sys.stderr)
     print("", file=sys.stderr)
     print("Providers:", file=sys.stderr)
-    print("  gemini, codex, opencode, droid, claude, copilot", file=sys.stderr)
+    print("  gemini, codex, opencode, droid, claude, copilot, cursor", file=sys.stderr)
 
 
 def _resolve_work_dir(session_file: str | None) -> Path:
@@ -94,11 +95,12 @@ def main():
                 from askd_client import maybe_start_daemon, wait_for_daemon_ready
                 from providers import (
                     CASK_CLIENT_SPEC,
+                    CURSOR_CLIENT_SPEC,
                     DASK_CLIENT_SPEC,
                     GASK_CLIENT_SPEC,
+                    HASK_CLIENT_SPEC,
                     LASK_CLIENT_SPEC,
                     OASK_CLIENT_SPEC,
-                    HASK_CLIENT_SPEC,
                 )
 
                 specs = {
@@ -108,6 +110,7 @@ def main():
                     "claude": LASK_CLIENT_SPEC,
                     "droid": DASK_CLIENT_SPEC,
                     "copilot": HASK_CLIENT_SPEC,
+                    "cursor": CURSOR_CLIENT_SPEC,
                 }
 
                 spec = specs.get(provider)

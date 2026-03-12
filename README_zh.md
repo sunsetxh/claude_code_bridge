@@ -3,7 +3,7 @@
 # Claude Code Bridge (ccb) v5.2.6
 
 **终端分屏多模型协作工具**
-**Claude · Codex · Gemini · OpenCode · Droid**
+**Claude · Codex · Gemini · OpenCode · Droid · Copilot · Cursor**
 **轻量异步通讯，交互皆可见，模型皆可控**
 
 <p>
@@ -162,7 +162,9 @@
 | `cping`, `gping`, `oping`, `dping`, `lping` | `ccb-ping <provider>` |
 | `cpend`, `gpend`, `opend`, `dpend`, `lpend` | `pend <provider> [N]` |
 
-**支持的 provider:** `gemini`, `codex`, `opencode`, `droid`, `claude`, `copilot`
+**支持的 provider:** `gemini`, `codex`, `opencode`, `droid`, `claude`, `copilot`, `cursor`
+
+**Cursor Agent 说明**: Cursor 使用子进程自动化（`cursor-agent --print --output-format json`）而非基于窗格的通信。使用 `ask cursor` 发送提示，使用 `uping`/`upend` 查看会话信息。暂不支持 `ccb cursor` 启动器。
 
 **🪟 Windows WezTerm + PowerShell 支持：**
 - 完整的 Windows 原生支持（WezTerm 终端）
@@ -362,7 +364,8 @@ ccb -a -r codex gemini opencode claude  # 自动 + 恢复（四个全开）
 tmux 提示：CCB 的 tmux 状态栏/窗格标题主题只会在 CCB 运行期间启用。
 tmux 提示：在 tmux 内可以按 `Ctrl+b` 然后按 `Space` 来切换布局；可以连续按，多次循环切换不同布局。
 
-布局规则：当前 pane 对应 providers 列表的最后一个。额外 pane 顺序为 `[cmd?, providers 反序]`；第一个额外 pane 在右上，其后先填满左列（从上到下），再填右列（从上到下）。例：4 个 pane 左2右2，5 个 pane 左2右3。
+布局规则：布局是确定的，但不会直接按输入顺序摆放。providers 列表的最后一个会成为锚点，运行在当前 pane。额外 pane 的顺序是 `[cmd?, reversed(providers[:-1])]`：第一个额外 pane 放到右上，之后先填左列（从上到下），再填右列（从上到下）。例：4 个 pane 左2右2，5 个 pane 左2右3。
+为什么会显得“没规律”：`cmd` pane 会插到最前面；单 provider 启动可能直接复用已有 pane 而不分割；而 `providers[:-1]` 会先反转，所以 `ccb a b c d` 和 `ccb d c b a` 本来就会得到不同布局。
 提示：`ccb up` 已移除，请使用 `ccb ...` 或配置 `ccb.config`。
 ```
 
