@@ -6,7 +6,6 @@ Direct cursor-agent CLI communication without tmux pane/session machinery.
 from __future__ import annotations
 
 import json
-import os
 import time
 from pathlib import Path
 from typing import Any, Optional
@@ -136,6 +135,7 @@ class CursorAdapter(BaseProviderAdapter):
 
     def handle_exception(self, exc: Exception, task: QueuedTask) -> ProviderResult:
         _write_log(f"[ERROR] provider=cursor req_id={task.req_id} exception={exc}")
+        work_dir = Path(task.request.work_dir)
         return ProviderResult(
             exit_code=1,
             reply=f"Cursor exception: {exc}",

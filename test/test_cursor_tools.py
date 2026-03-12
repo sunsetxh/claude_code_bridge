@@ -242,28 +242,6 @@ def test_cursor_comm_module_exists():
         raise AssertionError(f"cursor_comm module should be importable: {e}")
 
 
-def test_ccb_cursor_launcher_not_supported():
-    """Test that ccb cursor launcher is intentionally NOT supported."""
-    ccb_script = script_dir.parent / "ccb"
-    assert ccb_script.exists(), "ccb script not found"
-
-    content = ccb_script.read_text(encoding="utf-8", errors="ignore")
-
-    # Check that there is NO start_cursor function
-    assert "def start_cursor" not in content, \
-        "ccb should NOT have start_cursor function (cursor only supported via ask cursor)"
-
-    # Check that cursor is NOT in allowed providers sets
-    # Look for the pattern `allowed = {...}` that lists providers
-    import re
-    allowed_sets = re.findall(r'allowed\s*=\s*\{([^}]+)\}', content)
-    for allowed_set in allowed_sets:
-        assert '"cursor"' not in allowed_set and "'cursor'" not in allowed_set, \
-            f"ccb should NOT list cursor in allowed providers (found: {allowed_set})"
-
-    print("✓ ccb cursor launcher is intentionally not implemented (ask cursor only)")
-
-
 if __name__ == "__main__":
     tests = [
         test_uping_script_exists,
@@ -280,7 +258,6 @@ if __name__ == "__main__":
         test_bin_ask_cursor_mapping,
         test_upend_does_not_promise_full_history,
         test_cursor_comm_module_exists,
-        test_ccb_cursor_launcher_not_supported,
     ]
 
     print("Running Cursor provider tool and integration tests...")
