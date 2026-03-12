@@ -4,9 +4,6 @@ This index keeps project follow-up work grouped by topic instead of mixing unrel
 
 ## Active TODO Files
 
-- [docs/todo-async-supervision.md](/home/wyc/code/github/claude_code_bridge/docs/todo-async-supervision.md)
-  Async task tracking, wait/watch, completion artifacts, and supervisor loop.
-
 - [docs/todo-cursor-launcher.md](/home/wyc/code/github/claude_code_bridge/docs/todo-cursor-launcher.md)
   Remaining Cursor follow-up work after core launcher landing.
 
@@ -16,7 +13,14 @@ This index keeps project follow-up work grouped by topic instead of mixing unrel
 - [docs/todo-claude-stability.md](/home/wyc/code/github/claude_code_bridge/docs/todo-claude-stability.md)
   Claude askd/session stability follow-up, including stuck-request queue blockage.
 
+
 ## Recently Completed
+
+- [docs/todo-async-supervision.md](/home/wyc/code/github/claude_code_bridge/docs/todo-async-supervision.md)
+  Async task tracking MVP is complete: task metadata, structured results, `pend --task/--list`, and `await-task`.
+
+- [docs/todo-opencode-launcher.md](/home/wyc/code/github/claude_code_bridge/docs/todo-opencode-launcher.md)
+  OpenCode `ccb -r` session restore now binds an explicit session ID and persists it into `.opencode-session`.
 
 - [docs/todo-opencode-unified-askd.md](/home/wyc/code/github/claude_code_bridge/docs/todo-opencode-unified-askd.md)
   OpenCode client migration to unified `askd` is complete; file kept as implementation record.

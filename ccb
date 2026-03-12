@@ -1247,10 +1247,10 @@ class AILauncher:
         runtime = self.runtime_dir / provider
         runtime.mkdir(parents=True, exist_ok=True)
 
-        start_cmd = self._get_start_cmd(provider)
+        start_cmd_str, provider_session_id = self._get_start_cmd(provider)
         keep_open = os.environ.get("CODEX_WEZTERM_KEEP_OPEN", "1").lower() not in {"0", "false", "no", "off"}
         if keep_open:
-            start_cmd = _build_keep_open_cmd(provider, start_cmd)
+            start_cmd_str = _build_keep_open_cmd(provider, start_cmd_str)
         use_direction = (direction or ("right" if not self.wezterm_panes else "bottom")).strip() or "right"
         use_parent = parent_pane
         if not use_parent and use_direction == "bottom":
@@ -1262,7 +1262,7 @@ class AILauncher:
         pane_title_marker = f"CCB-{provider.capitalize()}"
         title_cmd = _build_pane_title_cmd(pane_title_marker)
         env_overrides = self._provider_env_overrides(provider)
-        full_cmd = title_cmd + self._build_env_prefix(env_overrides) + _build_export_path_cmd(self.script_dir / "bin") + start_cmd
+        full_cmd = title_cmd + self._build_env_prefix(env_overrides) + _build_export_path_cmd(self.script_dir / "bin") + start_cmd_str
         backend = WeztermBackend()
         pane_id = backend.create_pane(full_cmd, str(Path.cwd()), direction=use_direction, percent=50, parent_pane=use_parent)
         self.wezterm_panes[provider] = pane_id
@@ -1278,18 +1278,18 @@ class AILauncher:
                 output_fifo,
                 pane_id=pane_id,
                 pane_title_marker=pane_title_marker,
-                codex_start_cmd=start_cmd,
+                codex_start_cmd=start_cmd_str,
             )
         elif provider == "gemini":
-            self._write_gemini_session(runtime, None, pane_id=pane_id, pane_title_marker=pane_title_marker, start_cmd=start_cmd)
+            self._write_gemini_session(runtime, None, pane_id=pane_id, pane_title_marker=pane_title_marker, start_cmd=start_cmd_str)
         elif provider == "opencode":
-            self._write_opencode_session(runtime, None, pane_id=pane_id, pane_title_marker=pane_title_marker, start_cmd=start_cmd)
+            self._write_opencode_session(runtime, None, pane_id=pane_id, pane_title_marker=pane_title_marker, start_cmd=start_cmd_str, opencode_session_id=provider_session_id)
         elif provider == "droid":
-            self._write_droid_session(runtime, None, pane_id=pane_id, pane_title_marker=pane_title_marker, start_cmd=start_cmd)
+            self._write_droid_session(runtime, None, pane_id=pane_id, pane_title_marker=pane_title_marker, start_cmd=start_cmd_str)
         elif provider == "copilot":
-            self._write_copilot_session(runtime, None, pane_id=pane_id, pane_title_marker=pane_title_marker, start_cmd=start_cmd)
+            self._write_copilot_session(runtime, None, pane_id=pane_id, pane_title_marker=pane_title_marker, start_cmd=start_cmd_str)
         elif provider == "cursor":
-            self._write_cursor_session(runtime, None, pane_id=pane_id, pane_title_marker=pane_title_marker, start_cmd=start_cmd)
+            self._write_cursor_session(runtime, None, pane_id=pane_id, pane_title_marker=pane_title_marker, start_cmd=start_cmd_str)
         else:
             print(f"❌ {t('unknown_provider', provider=provider)}")
             return None
@@ -1903,22 +1903,23 @@ class AILauncher:
         print(f"⚠️ Warmup failed: {provider}")
         return False
 
-    def _get_start_cmd(self, provider: str) -> str:
+    def _get_start_cmd(self, provider: str) -> tuple[str, str | None]:
         if provider == "codex":
             # NOTE: Codex TUI has paste-burst detection; terminal injection (wezterm send-text/tmux paste-buffer)
             # is often detected as "paste", causing Enter to only line-break not submit. Disable detection by default.
-            return self._build_codex_start_cmd()
+            return self._build_codex_start_cmd(), None
         elif provider == "gemini":
-            return self._build_gemini_start_cmd()
+            return self._build_gemini_start_cmd(), None
         elif provider == "opencode":
             return self._build_opencode_start_cmd()
         elif provider == "droid":
-            return self._build_droid_start_cmd()
+            cmd, _, _ = self._build_droid_start_cmd()
+            return cmd, None
         elif provider == "copilot":
-            return self._build_copilot_start_cmd()
+            return self._build_copilot_start_cmd(), None
         elif provider == "cursor":
-            return self._build_cursor_start_cmd()
-        return ""
+            return self._build_cursor_start_cmd(), None
+        return "", None
 
     def _opencode_resume_allowed(self) -> bool:
         try:
@@ -2003,7 +2004,7 @@ class AILauncher:
 
         return False
 
-    def _build_opencode_start_cmd(self) -> str:
+    def _build_opencode_start_cmd(self) -> tuple[str, str | None]:
         # OpenCode CLI (TUI). Allow override via env for custom wrappers.
         cmd = (os.environ.get("OPENCODE_START_CMD") or "opencode").strip() or "opencode"
 
@@ -2011,15 +2012,26 @@ class AILauncher:
         if self.auto:
             self._ensure_opencode_auto_config()
 
+        opencode_session_id: str | None = None
+
         # Resume mode: continue last session
         if self.resume:
-            if self._opencode_resume_allowed():
+            try:
+                from opencode_comm import find_latest_opencode_session_id
+                opencode_session_id, has_history = find_latest_opencode_session_id(self.project_root)
+            except Exception:
+                has_history = self._opencode_resume_allowed()
+
+            if opencode_session_id:
+                cmd = f"{cmd} --session {opencode_session_id}"
+                print(f"🔁 {t('resuming_session', provider='OpenCode', session_id=opencode_session_id[:8])}")
+            elif self._opencode_resume_allowed():
                 cmd = f"{cmd} --continue"
                 print(f"🔁 {t('resuming_session', provider='OpenCode', session_id='')}")
             else:
                 print(f"ℹ️ {t('no_history_fresh', provider='OpenCode')}")
 
-        return cmd
+        return cmd, opencode_session_id
 
     def _get_latest_droid_session_id(self) -> tuple[str | None, bool, Path | None]:
         """
@@ -2283,7 +2295,8 @@ class AILauncher:
         runtime.mkdir(parents=True, exist_ok=True)
 
         env_overrides = self._provider_env_overrides("opencode")
-        start_cmd = self._build_env_prefix(env_overrides) + _build_export_path_cmd(self.script_dir / "bin") + self._build_opencode_start_cmd()
+        opencode_cmd, opencode_session_id = self._build_opencode_start_cmd()
+        start_cmd = self._build_env_prefix(env_overrides) + _build_export_path_cmd(self.script_dir / "bin") + opencode_cmd
         pane_title_marker = "CCB-OpenCode"
 
         backend = TmuxBackend()
@@ -2322,6 +2335,7 @@ class AILauncher:
             pane_id=pane_id,
             pane_title_marker=pane_title_marker,
             start_cmd=start_cmd,
+            opencode_session_id=opencode_session_id,
         )
 
         print(f"✅ {t('started_backend', provider='OpenCode', terminal='tmux pane', pane_id=pane_id)}")
@@ -2692,7 +2706,7 @@ class AILauncher:
                 pass
 
         title_cmd = _build_pane_title_cmd(pane_title_marker) if self.terminal_type == "wezterm" else ""
-        opencode_cmd = self._build_opencode_start_cmd()
+        opencode_cmd, opencode_session_id = self._build_opencode_start_cmd()
         start_cmd = (
             title_cmd
             + self._build_env_prefix(self._provider_env_overrides("opencode"))
@@ -2705,6 +2719,7 @@ class AILauncher:
             pane_id=pane_id,
             pane_title_marker=pane_title_marker,
             start_cmd=start_cmd,
+            opencode_session_id=opencode_session_id,
         )
 
         # tmux path: run OpenCode directly (without shell -lc) to avoid shell startup side-effects
@@ -2996,7 +3011,7 @@ class AILauncher:
         self._maybe_start_provider_daemon("gemini")
         return True
 
-    def _write_opencode_session(self, runtime, tmux_session, pane_id=None, pane_title_marker=None, start_cmd=None):
+    def _write_opencode_session(self, runtime, tmux_session, pane_id=None, pane_title_marker=None, start_cmd=None, opencode_session_id=None):
         session_file = self._project_session_file(".opencode-session")
 
         writable, reason, fix = check_session_writable(session_file)
@@ -3005,7 +3020,7 @@ class AILauncher:
             print(f"💡 Fix: {fix}", file=sys.stderr)
             return False
 
-        data = {
+        data: dict = {
             "session_id": self.session_id,
             "ccb_session_id": self.session_id,
             "ccb_project_id": compute_ccb_project_id(self.project_root),
@@ -3022,6 +3037,9 @@ class AILauncher:
             "start_cmd": str(start_cmd) if start_cmd else None,
         }
 
+        if opencode_session_id:
+            data["opencode_session_id"] = opencode_session_id
+
         ok, err = safe_write_session(session_file, json.dumps(data, ensure_ascii=False, indent=2))
         if not ok:
             print(err, file=sys.stderr)
@@ -3037,6 +3055,7 @@ class AILauncher:
                         "pane_id": pane_id,
                         "pane_title_marker": pane_title_marker,
                         "session_file": str(session_file),
+                        "opencode_session_id": opencode_session_id,
                     }
                 },
             })

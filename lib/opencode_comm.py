@@ -34,6 +34,23 @@ apply_backend_env()
 _REQ_ID_RE = re.compile(rf"{re.escape(REQ_ID_PREFIX)}\s*([0-9a-fA-F]{{32}}|\d{{8}}-\d{{6}}-\d{{3}}-\d+-\d+)")
 
 
+def find_latest_opencode_session_id(work_dir: Path) -> tuple[str | None, bool]:
+    """
+    Find latest OpenCode session ID for a given work_dir.
+
+    Returns:
+        (session_id, has_history): session_id is the OpenCode storage ID (e.g., "ses_abc123"),
+            has_history indicates whether any session exists for this work_dir.
+    """
+    reader = OpenCodeLogReader(work_dir=work_dir, project_id="global")
+    session = reader._get_latest_session()
+    if session:
+        sid = session.get("payload", {}).get("id")
+        if sid:
+            return sid, True
+    return None, False
+
+
 def compute_opencode_project_id(work_dir: Path) -> str:
     """
     Compute OpenCode projectID for a directory.
