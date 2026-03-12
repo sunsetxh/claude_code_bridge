@@ -1,26 +1,29 @@
 #!/usr/bin/env python3
 """
-pend - View latest reply from AI providers.
+pend - View latest reply from AI providers or query async tasks.
 
 Usage:
-    pend <provider> [N] [--session-file FILE]
+    pend <provider> [N] [--session-file FILE]    # Legacy: get latest reply
+    pend --task <task_id>                       # Query task status/result
+    pend --list [--provider P] [--status S]    # List tasks
 
-Providers:
+Providers (legacy mode):
     gemini, codex, opencode, droid, claude
-
-Arguments:
-    N    Show the latest N conversations (default: 1)
 """
 
+import argparse
 import sys
 import os
 import subprocess
 from pathlib import Path
 
 script_dir = Path(__file__).resolve().parent
+lib_dir = script_dir.parent / "lib"
+sys.path.insert(0, str(lib_dir))
+
+import async_storage
 
 
-# Provider to original pend command mapping
 PROVIDER_PENDS = {
     "gemini": "gpend",
     "codex": "cpend",
@@ -30,53 +33,135 @@ PROVIDER_PENDS = {
 }
 
 
-def _usage():
-    print("Usage: pend <provider> [N] [--session-file FILE]", file=sys.stderr)
-    print("", file=sys.stderr)
-    print("Providers:", file=sys.stderr)
-    print("  gemini, codex, opencode, droid, claude", file=sys.stderr)
-    print("", file=sys.stderr)
-    print("Arguments:", file=sys.stderr)
-    print("  N    Show the latest N conversations (default: 1)", file=sys.stderr)
+def _find_project_ccb_dir() -> Path | None:
+    cwd = Path.cwd()
+    for d in (cwd, *cwd.parents):
+        ccb = d / ".ccb"
+        if ccb.is_dir():
+            return ccb
+        if d == d.parent:
+            break
+    return None
 
 
-def main():
-    if len(sys.argv) < 2:
-        _usage()
+def _print_task(meta: dict, result: dict | None = None) -> None:
+    print(f"Task ID: {meta.get('task_id', 'unknown')}")
+    print(f"Provider: {meta.get('provider', 'unknown')}")
+    print(f"Caller: {meta.get('caller', 'unknown')}")
+    print(f"Status: {meta.get('status', 'unknown')}")
+    print(f"Submitted: {meta.get('submitted_at', 'unknown')}")
+    if meta.get('started_at'):
+        print(f"Started: {meta.get('started_at')}")
+    if meta.get('completed_at'):
+        print(f"Completed: {meta.get('completed_at')}")
+    if meta.get('exit_code') is not None:
+        print(f"Exit Code: {meta.get('exit_code')}")
+    if meta.get('message_summary'):
+        print(f"Message: {meta.get('message_summary')[:80]}...")
+    if result:
+        print("")
+        print("--- Result ---")
+        reply = result.get('reply_text', '')
+        if reply:
+            print(reply[:500] + ("..." if len(reply) > 500 else ""))
+
+
+def _print_task_list(tasks: list[dict]) -> None:
+    if not tasks:
+        print("No tasks found.")
+        return
+    print(f"{'Task ID':<35} {'Provider':<10} {'Status':<12} {'Submitted':<25}")
+    print("-" * 85)
+    for t in tasks:
+        task_id = t.get('task_id', '')[:34]
+        provider = t.get('provider', '')[:9]
+        status = t.get('status', '')[:11]
+        submitted = t.get('submitted_at', '')[:24]
+        print(f"{task_id:<35} {provider:<10} {status:<12} {submitted:<25}")
+
+
+def _handle_task(args) -> int:
+    ccb_dir = _find_project_ccb_dir()
+    if not ccb_dir:
+        print("[ERROR] No .ccb directory found", file=sys.stderr)
         return 1
+    meta = async_storage.read_task_meta(ccb_dir, args.task)
+    if not meta:
+        print(f"[ERROR] Task not found: {args.task}", file=sys.stderr)
+        return 1
+    result = None
+    if meta.get('status') in ('completed', 'failed'):
+        result = async_storage.read_task_result(ccb_dir, args.task)
+    _print_task(meta, result)
+    return 0
 
-    provider = sys.argv[1].lower()
 
-    if provider in ("-h", "--help"):
-        _usage()
-        return 0
+def _handle_list(args) -> int:
+    ccb_dir = _find_project_ccb_dir()
+    if not ccb_dir:
+        print("[ERROR] No .ccb directory found", file=sys.stderr)
+        return 1
+    tasks = async_storage.list_tasks(ccb_dir, provider=args.provider, status=args.status)
+    _print_task_list(tasks)
+    return 0
 
+
+def _handle_legacy(provider: str, argv: list[str]) -> int:
     if provider not in PROVIDER_PENDS:
         print(f"[ERROR] Unknown provider: {provider}", file=sys.stderr)
         print(f"[ERROR] Available: {', '.join(PROVIDER_PENDS.keys())}", file=sys.stderr)
         return 1
-
-    # Get the original pend command
     pend_cmd = PROVIDER_PENDS[provider]
     pend_path = script_dir / pend_cmd
-
     if not pend_path.exists():
         print(f"[ERROR] Command not found: {pend_path}", file=sys.stderr)
         return 1
-
-    # Pass remaining arguments to the original command
-    # On Windows, need to use Python interpreter explicitly
     if sys.platform == "win32":
-        cmd = [sys.executable, str(pend_path)] + sys.argv[2:]
+        cmd = [sys.executable, str(pend_path)] + argv
     else:
-        cmd = [str(pend_path)] + sys.argv[2:]
-
+        cmd = [str(pend_path)] + argv
     try:
         result = subprocess.run(cmd)
         return result.returncode
     except Exception as e:
         print(f"[ERROR] {e}", file=sys.stderr)
         return 1
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="pend - View provider replies or query async tasks",
+        add_help=False,
+    )
+    parser.add_argument("provider", nargs="?", help="Provider name (gemini/codex/opencode/droid/claude)")
+    parser.add_argument("--task", help="Query task by ID")
+    parser.add_argument("--list", action="store_true", help="List all tasks")
+    parser.add_argument("--provider", help="Filter by provider (for --list)")
+    parser.add_argument("--status", help="Filter by status (for --list)")
+    parser.add_argument("-h", "--help", action="store_true", help="Show this help")
+    args, unknown = parser.parse_known_args()
+
+    if args.help:
+        print(__doc__)
+        return 0
+
+    if args.task:
+        if args.provider:
+            print("[ERROR] Cannot use --task with provider positional argument", file=sys.stderr)
+            return 1
+        return _handle_task(args)
+
+    if args.list:
+        if args.provider:
+            print("[ERROR] Cannot use --list with provider positional argument", file=sys.stderr)
+            return 1
+        return _handle_list(args)
+
+    if args.provider:
+        return _handle_legacy(args.provider, unknown)
+
+    print("Usage: pend <provider> | pend --task <id> | pend --list", file=sys.stderr)
+    return 1
 
 
 if __name__ == "__main__":

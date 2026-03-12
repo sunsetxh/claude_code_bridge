@@ -31,3 +31,6 @@ GEMINI.md
 openspec
 *.log
 .hippocampus
+
+.ccb/async-tasks/
+.ccb/async-results/

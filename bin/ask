@@ -48,6 +48,7 @@ setup_windows_encoding()
 from cli_output import EXIT_ERROR, EXIT_OK
 from providers import parse_qualified_provider
 from session_utils import find_project_session_file
+import async_storage
 
 
 # Provider to daemon command mapping
@@ -218,6 +219,24 @@ def _append_task_status_line(status_file: Path, line: str) -> None:
             handle.write(f"{ts} {line}\n")
     except Exception:
         pass
+
+
+def _find_project_ccb_dir() -> Path | None:
+    """Find or create project .ccb directory for async task storage."""
+    cwd = Path.cwd()
+    for d in (cwd, *cwd.parents):
+        ccb = d / ".ccb"
+        if ccb.is_dir():
+            return ccb
+        if d == d.parent:
+            break
+    # Not found: create .ccb in cwd
+    ccb = cwd / ".ccb"
+    try:
+        ccb.mkdir(parents=True, exist_ok=True)
+        return ccb
+    except Exception:
+        return None
 
 
 def _use_unified_daemon() -> bool:
@@ -769,6 +788,24 @@ def main(argv: list[str]) -> int:
         f"submitted task={task_id} provider={provider} caller={caller} work_dir={os.getcwd()}",
     )
 
+    # Persist task metadata to project .ccb/ directory
+    ccb_dir = _find_project_ccb_dir()
+    if ccb_dir:
+        from datetime import datetime, timezone
+        submitted_at = datetime.now(timezone.utc).isoformat()
+        meta = {
+            "task_id": task_id,
+            "provider": provider,
+            "caller": caller,
+            "work_dir": str(Path.cwd()),
+            "submitted_at": submitted_at,
+            "status": "submitted",
+            "message_summary": message[:100] if message else "",
+            "log_file": str(log_file),
+            "status_file": str(status_file),
+        }
+        async_storage.write_task_meta(ccb_dir, task_id, meta)
+
     # Get the path to this script for recursive call with --foreground
     ask_cmd = str(Path(__file__).resolve())
     bg_pid: int | None = None
@@ -807,6 +844,7 @@ $OutputEncoding = [System.Text.Encoding]::UTF8
 [Console]::InputEncoding = [System.Text.Encoding]::UTF8
 $env:PYTHONIOENCODING = "utf-8"
 $env:CCB_REQ_ID = "{task_id}"
+$env:CCB_TASK_ID = "{task_id}"
 $env:CCB_CALLER = "{caller}"
 $env:CCB_WORK_DIR = "{os.getcwd()}"
 {run_dir_line}{email_env_lines}$statusFile = "{status_file_win}"
@@ -859,6 +897,7 @@ _now() {{
 echo "$(_now) running pid=$$" >> {quoted_status}
 echo "[CCB_TASK_START] task={task_id} provider={provider} caller={caller} pid=$$"
 export CCB_REQ_ID="{task_id}"
+export CCB_TASK_ID="{task_id}"
 export CCB_CALLER="{caller}"
 export CCB_WORK_DIR="{os.getcwd()}"
 {run_dir_line}{email_env_lines}python3 {quoted_ask_cmd} {quoted_provider} --foreground --timeout {timeout} <<'ASKEOF'

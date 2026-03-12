@@ -1,0 +1,88 @@
+#!/usr/bin/env python3
+"""
+await-task - Block until an async task completes.
+
+Usage:
+    await-task <task_id> [--timeout SECONDS]
+
+Arguments:
+    task_id     The task ID to wait for
+    --timeout   Maximum seconds to wait (default: 3600)
+"""
+
+import argparse
+import sys
+import time
+from pathlib import Path
+
+script_dir = Path(__file__).resolve().parent
+lib_dir = script_dir.parent / "lib"
+sys.path.insert(0, str(lib_dir))
+
+import async_storage
+
+
+def _find_project_ccb_dir() -> Path | None:
+    cwd = Path.cwd()
+    for d in (cwd, *cwd.parents):
+        ccb = d / ".ccb"
+        if ccb.is_dir():
+            return ccb
+        if d == d.parent:
+            break
+    return None
+
+
+TERMINAL_STATUSES = frozenset({"completed", "failed", "cancelled", "incomplete"})
+
+
+def _print_result(meta: dict, result: dict, is_terminal: bool) -> None:
+    status = meta.get('status', 'unknown')
+    print(f"Task {meta.get('task_id')} {status}:")
+    print(f"  Status: {status}")
+    print(f"  Exit Code: {meta.get('exit_code')}")
+    reply = result.get('reply_text', '')
+    if reply:
+        print("")
+        print("--- Result ---")
+        print(reply[:1000] + ("..." if len(reply) > 1000 else ""))
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Block until task completes")
+    parser.add_argument("task_id", help="Task ID to wait for")
+    parser.add_argument("--timeout", type=float, default=3600, help="Max seconds to wait (default: 3600)")
+    args = parser.parse_args()
+
+    ccb_dir = _find_project_ccb_dir()
+    if not ccb_dir:
+        print("[ERROR] No .ccb directory found", file=sys.stderr)
+        return 1
+
+    task_id = args.task_id
+    poll_interval = 2.0
+    deadline = time.time() + args.timeout
+
+    while time.time() < deadline:
+        meta = async_storage.read_task_meta(ccb_dir, task_id)
+        if not meta:
+            print(f"[ERROR] Task not found: {task_id}", file=sys.stderr)
+            return 2
+
+        status = meta.get('status', '')
+        if status in TERMINAL_STATUSES:
+            result = async_storage.read_task_result(ccb_dir, task_id)
+            _print_result(meta, result if result else {}, True)
+            if status == 'completed':
+                return 0
+            else:
+                return 1
+
+        time.sleep(poll_interval)
+
+    print(f"[ERROR] Timeout after {args.timeout}s waiting for task {task_id}", file=sys.stderr)
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

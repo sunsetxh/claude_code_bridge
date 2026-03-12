@@ -13,6 +13,9 @@ This index keeps project follow-up work grouped by topic instead of mixing unrel
 - [docs/todo-copilot-validation.md](/home/wyc/code/github/claude_code_bridge/docs/todo-copilot-validation.md)
   Copilot live-session validation that still needs a real end-to-end pass.
 
+- [docs/todo-claude-stability.md](/home/wyc/code/github/claude_code_bridge/docs/todo-claude-stability.md)
+  Claude askd/session stability follow-up, including stuck-request queue blockage.
+
 ## Recently Completed
 
 - [docs/todo-opencode-unified-askd.md](/home/wyc/code/github/claude_code_bridge/docs/todo-opencode-unified-askd.md)

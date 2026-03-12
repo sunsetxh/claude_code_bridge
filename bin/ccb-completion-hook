@@ -40,6 +40,7 @@ from completion_hook import (
     normalize_completion_status,
 )
 from session_utils import find_project_session_file
+import async_storage
 
 setup_windows_encoding()
 
@@ -380,6 +381,7 @@ def main() -> int:
     parser.add_argument("--output", default="", help="Output file path (optional)")
     parser.add_argument("--reply", default="", help="Reply text (optional)")
     parser.add_argument("--req-id", default="", help="Request ID")
+    parser.add_argument("--task-id", default="", help="Async task ID")
     args = parser.parse_args()
 
     provider = args.provider.lower()
@@ -400,6 +402,47 @@ def main() -> int:
     status = normalize_completion_status(os.environ.get("CCB_COMPLETION_STATUS", ""), done_seen=done_seen)
     if not reply_content:
         reply_content = default_reply_for_status(status, done_seen=done_seen)
+
+    # Persist task result to project .ccb/ directory if task_id is available
+    task_id = args.task_id or os.environ.get("CCB_TASK_ID", "").strip() or args.req_id
+    if task_id:
+        work_dir = os.environ.get("CCB_WORK_DIR", "")
+        ccb_dir = None
+        if work_dir:
+            ccb_dir = Path(work_dir) / ".ccb"
+            if not ccb_dir.is_dir():
+                ccb_dir = None
+        if not ccb_dir:
+            cwd = Path.cwd()
+            for d in (cwd, *cwd.parents):
+                ccb_dir = d / ".ccb"
+                if ccb_dir.is_dir():
+                    break
+                if d == d.parent:
+                    ccb_dir = None
+                    break
+        if ccb_dir and ccb_dir.is_dir():
+            from datetime import datetime, timezone
+            completed_at = datetime.now(timezone.utc).isoformat()
+            terminal_statuses = {"completed", "failed", "cancelled", "incomplete"}
+            final_status = status if status in terminal_statuses else "incomplete"
+            exit_code = 0 if final_status == "completed" else 1
+            existing = async_storage.read_task_meta(ccb_dir, task_id) or {}
+            meta = {
+                "status": final_status,
+                "completed_at": completed_at,
+                "exit_code": exit_code,
+            }
+            meta = {**existing, **meta}
+            async_storage.write_task_meta(ccb_dir, task_id, meta)
+            result = {
+                "provider": provider,
+                "status": final_status,
+                "completed_at": completed_at,
+                "exit_code": exit_code,
+                "reply_text": reply_content[:10240] if reply_content else "",
+            }
+            async_storage.write_task_result(ccb_dir, task_id, result)
 
     # Handle email caller - send reply via email
     if caller == "email":
