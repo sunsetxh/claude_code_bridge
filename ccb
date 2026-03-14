@@ -31,8 +31,10 @@ from compat import setup_windows_encoding
 from ccb_config import get_backend_env
 from ccb_start_config import DEFAULT_PROVIDERS, ensure_default_start_config, load_start_config
 from session_utils import (
+    check_active_session,
     check_session_writable,
     find_project_session_file,
+    format_conflict_error,
     legacy_project_config_dir,
     project_config_dir,
     resolve_project_config_dir,
@@ -1189,18 +1191,17 @@ class AILauncher:
         # Check for conflicting active session (unless --force is used)
         if not self.force:
             session_file = self._project_session_file(f".{provider}-session")
-            from session_utils import check_active_session
-            is_active, msg, _data = check_active_session(session_file, provider.capitalize())
+            is_active, msg, data = check_active_session(session_file, provider.capitalize())
             if is_active:
-                print(f"❌ {msg}")
-                print(f"💡 Another CCB instance is already running {provider.capitalize()} in this project directory.")
-                print(f"   Project: {self.project_root}")
-                print(f"   Session: {session_file}")
-                print()
-                print(f"Options:")
-                print(f"  1. Use the existing CCB session (find the tmux/wezterm window and attach)")
-                print(f"  2. Stop the existing session first (close the window/pane)")
-                print(f"  3. Override with: ccb --force {provider} ... (NOT RECOMMENDED)")
+                # Get terminal type from session data for appropriate help text
+                terminal = data.get("terminal", self.terminal_type) if data else self.terminal_type
+                error_msg = format_conflict_error(
+                    provider=provider,
+                    work_dir=self.project_root,
+                    session_file=session_file,
+                    terminal_type=terminal,
+                )
+                print(error_msg, end="")
                 return None
 
         # Handle case when no terminal detected

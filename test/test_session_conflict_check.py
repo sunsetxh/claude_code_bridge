@@ -96,11 +96,19 @@ def test_format_conflict_error():
 
     with tempfile.TemporaryDirectory() as tmp:
         work_dir = Path(tmp)
-        msg = format_conflict_error(["codex", "claude"], work_dir)
-        assert "already running" in msg
-        assert "Codex, Claude" in msg
+        session_file = work_dir / ".ccb" / ".codex-session"
+
+        # Test tmux
+        msg = format_conflict_error("codex", work_dir, session_file, terminal_type="tmux")
+        assert "Codex" in msg
         assert str(work_dir) in msg
         assert "--force" in msg
+        assert "tmux" in msg
+
+        # Test wezterm
+        msg = format_conflict_error("claude", work_dir, session_file, terminal_type="wezterm")
+        assert "Claude" in msg
+        assert "wezterm" in msg.lower()
 
     print("✓ format_conflict_error: includes expected info")
 

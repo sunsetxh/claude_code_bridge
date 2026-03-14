@@ -229,22 +229,36 @@ def check_conflicting_sessions(
     return len(conflicting) > 0, conflicting
 
 
-def format_conflict_error(providers: list[str], work_dir: Path) -> str:
+def format_conflict_error(
+    provider: str,
+    work_dir: Path,
+    session_file: Path,
+    terminal_type: str = "tmux",
+) -> str:
     """Format error message for conflicting sessions."""
-    provider_list = ", ".join(p.capitalize() for p in providers)
-    return f"""❌ CCB instance already running in this project directory.
-
-Active providers: {provider_list}
-Project directory: {work_dir}
-
-💡 Options:
-  1. Use the existing CCB session (attach to it with tmux/wezterm)
-  2. Stop the existing session first (close the tmux/wezterm window/pane)
-  3. Use --force to override (NOT RECOMMENDED: may cause cross-talk)
-
-To attach to the existing session:
+    provider_cap = provider.capitalize()
+    if terminal_type == "wezterm":
+        attach_hint = f"""To attach to the existing session:
+  - Find the wezterm pane: wezterm cli list-clients
+  - The CCB window should be visible in your WezTerm instance"""
+    else:
+        attach_hint = f"""To attach to the existing session:
   - Find the tmux session: tmux list-sessions
-  - Attach: tmux attach-session -t <session-name>
+  - Attach: tmux attach-session -t <session-name>"""
+
+    return f"""❌ Active {provider_cap} session found
+
+💡 Another CCB instance is already running {provider_cap} in this project directory.
+
+Project: {work_dir}
+Session: {session_file}
+
+Options:
+  1. Use the existing CCB session (find the tmux/wezterm window and attach)
+  2. Stop the existing session first (close the window/pane)
+  3. Override with: ccb --force {provider} ... (NOT RECOMMENDED)
+
+{attach_hint}
 """
 
 
