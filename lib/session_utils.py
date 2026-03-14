@@ -199,14 +199,17 @@ def check_active_session(session_file: Path, provider_name: str, expected_work_d
         session_work_dir = data.get("work_dir") or data.get("start_dir")
         if session_work_dir:
             try:
-                from pathlib import Path as StdLibPath
-                session_work = StdLibPath(session_work_dir).resolve()
-                expected_work = StdLibPath(expected_work_dir).resolve()
+                session_work = Path(session_work_dir).resolve()
+                expected_work = Path(expected_work_dir).resolve()
                 if session_work != expected_work:
                     # Pane exists but belongs to a different project!
                     return False, f"Pane {pane_id} belongs to different project ({session_work})", data
             except Exception:
                 pass
+        else:
+            # work_dir field missing - cannot verify ownership
+            # Treat as stale since we can't guarantee it belongs to this project
+            return False, f"Cannot verify project ownership (missing work_dir in session)", data
 
     return True, f"Active {provider_name} session found in pane {pane_id}", data
 

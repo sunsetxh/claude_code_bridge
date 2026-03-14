@@ -1203,8 +1203,8 @@ class AILauncher:
                 )
                 print(error_msg, end="")
                 return None
-            elif msg and "belongs to different project" in msg:
-                # Pane exists but belongs to another project - stale session
+            elif msg and ("belongs to different project" in msg or "missing work_dir" in msg):
+                # Pane exists but belongs to another project, or session is incomplete - stale session
                 print(f"⚠️  {msg}", file=sys.stderr)
                 print(f"💡 Clearing stale session file and starting new {provider.capitalize()} pane...", file=sys.stderr)
                 try:
