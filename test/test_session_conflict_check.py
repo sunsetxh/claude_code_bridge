@@ -50,6 +50,39 @@ def test_check_active_session_no_pane():
     print("✓ check_active_session: no pane_id returns inactive")
 
 
+def test_check_active_session_wrong_project():
+    """Test check_active_session when pane belongs to different project."""
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        work_dir = Path(tmp) / "project_a"
+        work_dir.mkdir()
+        other_dir = Path(tmp) / "project_b"
+        other_dir.mkdir()
+
+        session_file = work_dir / ".codex-session"
+        session_file.write_text(json.dumps({
+            "active": True,
+            "pane_id": "%37",
+            "terminal": "tmux",
+            "work_dir": str(other_dir),  # Points to wrong project!
+        }))
+
+        # Mock TmuxBackend.is_alive to return True
+        from unittest.mock import patch, MagicMock
+        mock_backend = MagicMock()
+        mock_backend.is_alive.return_value = True
+
+        with patch('terminal.TmuxBackend', return_value=mock_backend):
+            # Check with expected_work_dir
+            is_active, msg, data = check_active_session(session_file, "Codex", expected_work_dir=work_dir)
+            # Should NOT be active because pane belongs to wrong project
+            assert not is_active
+            assert "belongs to different project" in msg
+
+    print("✓ check_active_session: detects pane from wrong project")
+
+
 def test_check_conflicting_sessions():
     """Test check_conflicting_sessions with multiple providers."""
     import tempfile
@@ -117,6 +150,7 @@ if __name__ == "__main__":
     test_check_active_session_no_file()
     test_check_active_session_inactive()
     test_check_active_session_no_pane()
+    test_check_active_session_wrong_project()
     test_check_conflicting_sessions()
     test_format_conflict_error()
     print("\n✅ All session conflict check tests passed")

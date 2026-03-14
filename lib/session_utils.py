@@ -139,18 +139,19 @@ def print_session_error(msg: str, to_stderr: bool = True) -> None:
     print(msg, file=output)
 
 
-def check_active_session(session_file: Path, provider_name: str) -> Tuple[bool, Optional[str], Optional[dict]]:
+def check_active_session(session_file: Path, provider_name: str, expected_work_dir: Optional[Path] = None) -> Tuple[bool, Optional[str], Optional[dict]]:
     """
     Check if a provider session is already active.
 
     Args:
         session_file: Path to the session file (e.g., .codex-session)
         provider_name: Name of the provider for error messages (e.g., "Codex")
+        expected_work_dir: Expected project directory to verify pane ownership
 
     Returns:
         (is_active, message, session_data)
-        - is_active: True if session exists and pane is alive
-        - message: Error/info message if is_active is True, None otherwise
+        - is_active: True if session exists, pane is alive, AND belongs to expected_work_dir
+        - message: Error/info message if is_active is True or if pane belongs to another project
         - session_data: The session data dict if exists, None otherwise
     """
     if not session_file or not session_file.exists():
@@ -176,22 +177,38 @@ def check_active_session(session_file: Path, provider_name: str) -> Tuple[bool, 
 
     # Check if pane is still alive
     terminal_type = data.get("terminal", "tmux")
+    pane_alive = False
     try:
         if terminal_type == "tmux":
             from terminal import TmuxBackend
             backend = TmuxBackend()
-            if backend.is_alive(str(pane_id)):
-                return True, f"Active {provider_name} session found in pane {pane_id}", data
+            pane_alive = backend.is_alive(str(pane_id))
         elif terminal_type == "wezterm":
             from terminal import WeztermBackend
             backend = WeztermBackend()
-            if backend.is_alive(str(pane_id)):
-                return True, f"Active {provider_name} session found in pane {pane_id}", data
+            pane_alive = backend.is_alive(str(pane_id))
     except Exception:
         pass
 
-    # Pane not found or not alive - session is stale
-    return False, None, data
+    if not pane_alive:
+        # Pane not found or not alive - session is stale
+        return False, None, data
+
+    # Pane is alive - verify it belongs to the expected project
+    if expected_work_dir is not None:
+        session_work_dir = data.get("work_dir") or data.get("start_dir")
+        if session_work_dir:
+            try:
+                from pathlib import Path as StdLibPath
+                session_work = StdLibPath(session_work_dir).resolve()
+                expected_work = StdLibPath(expected_work_dir).resolve()
+                if session_work != expected_work:
+                    # Pane exists but belongs to a different project!
+                    return False, f"Pane {pane_id} belongs to different project ({session_work})", data
+            except Exception:
+                pass
+
+    return True, f"Active {provider_name} session found in pane {pane_id}", data
 
 
 def check_conflicting_sessions(
