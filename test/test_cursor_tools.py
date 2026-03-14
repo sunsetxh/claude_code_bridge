@@ -216,6 +216,20 @@ def test_bin_ask_cursor_mapping():
     print("✓ bin/ask includes cursor in provider mapping")
 
 
+def test_bin_pend_cursor_mapping():
+    """Test that bin/pend has correct cursor mapping."""
+    pend_script = script_dir.parent / "bin" / "pend"
+    assert pend_script.exists(), "bin/pend not found"
+
+    content = pend_script.read_text(encoding="utf-8", errors="ignore")
+
+    # Check that cursor is in PROVIDER_PENDS
+    assert '"cursor":' in content, "bin/pend should have cursor in PROVIDER_PENDS"
+    assert '"upend"' in content, "bin/pend should map cursor to upend"
+
+    print("✓ bin/pend includes cursor in provider mapping")
+
+
 def test_upend_does_not_promise_full_history():
     """Test that upend output explicitly states history limitation."""
     upend = script_dir.parent / "bin" / "upend"
@@ -256,6 +270,7 @@ if __name__ == "__main__":
         test_changelog_mentions_cursor,
         test_ccb_ping_cursor_integration,
         test_bin_ask_cursor_mapping,
+        test_bin_pend_cursor_mapping,
         test_upend_does_not_promise_full_history,
         test_cursor_comm_module_exists,
     ]

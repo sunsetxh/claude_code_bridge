@@ -14,7 +14,10 @@ DONE_LINE_RE_TEMPLATE = r"^\s*CCB_DONE:\s*{req_id}\s*$"
 _TRAILING_DONE_TAG_RE = re.compile(
     r"^\s*(?!CCB_DONE\s*:)[A-Z][A-Z0-9_]*_DONE(?:\s*:\s*\d{8}-\d{6}-\d{3}-\d+-\d+)?\s*$"
 )
-_ANY_CCB_DONE_LINE_RE = re.compile(r"^\s*CCB_DONE:\s*\d{8}-\d{6}-\d{3}-\d+-\d+\s*$")
+# Match both new (datetime-PID-counter) and legacy (32-char hex) req_id for segment extraction
+_ANY_CCB_DONE_LINE_RE = re.compile(
+    r"^\s*CCB_DONE:\s*(?:[0-9a-fA-F]{32}|\d{8}-\d{6}-\d{3}-\d+-\d+)\s*$"
+)
 
 
 def _is_trailing_noise_line(line: str) -> bool:

@@ -151,6 +151,7 @@ class CodexAdapter(BaseProviderAdapter):
         anchor_ms: Optional[int] = None
         done_ms: Optional[int] = None
         fallback_scan = False
+        rebounded = False
 
         # Idle timeout detection for degraded completion
         idle_timeout = float(os.environ.get("CCB_CASKD_IDLE_TIMEOUT", "8.0"))
@@ -158,6 +159,8 @@ class CodexAdapter(BaseProviderAdapter):
         _last_reply_changed_at = time.time()
 
         anchor_collect_grace = min(deadline, time.time() + 2.0) if deadline else (time.time() + 2.0)
+        anchor_grace_deadline = time.time() + float(os.environ.get("CCB_CASKD_ANCHOR_GRACE_SECONDS", "2.5"))
+        recovery_tail_bytes = int(os.environ.get("CCB_CASKD_RECOVERY_TAIL_BYTES", "65536"))
         last_pane_check = time.time()
         default_interval = "5.0" if is_windows() else "2.0"
         pane_check_interval = float(os.environ.get("CCB_CASKD_PANE_CHECK_INTERVAL", default_interval))
@@ -211,6 +214,25 @@ class CodexAdapter(BaseProviderAdapter):
             event, state = reader.wait_for_event(state, wait_step)
 
             if event is None:
+                if (not rebounded) and (not anchor_seen) and (not chunks) and time.time() >= anchor_grace_deadline:
+                    recovered = self._recover_unanchored_request(
+                        task=task,
+                        session=session,
+                        pane_id=pane_id,
+                        prompt=prompt,
+                        tail_bytes=recovery_tail_bytes,
+                    )
+                    if recovered:
+                        session, backend, pane_id, reader, state = recovered
+                        fallback_scan = True
+                        rebounded = True
+                        anchor_collect_grace = min(deadline, time.time() + 2.0) if deadline else (time.time() + 2.0)
+                        anchor_grace_deadline = time.time() + float(
+                            os.environ.get("CCB_CASKD_SECOND_ANCHOR_GRACE_SECONDS", "2.5")
+                        )
+                        last_pane_check = time.time()
+                        continue
+
                 # Stale log detection: if no anchor and no chunks yet,
                 # check whether a newer session log appeared (e.g. after pane restart).
                 if (not anchor_seen) and (not chunks):
@@ -332,3 +354,68 @@ class CodexAdapter(BaseProviderAdapter):
         )
 
         return result
+
+    def _recover_unanchored_request(
+        self,
+        *,
+        task: QueuedTask,
+        session: CodexProjectSession,
+        pane_id: str,
+        prompt: str,
+        tail_bytes: int,
+    ) -> tuple[CodexProjectSession, Any, str, CodexLogReader, dict] | None:
+        req = task.request
+        try:
+            refreshed = load_project_session(Path(req.work_dir), req.instance)
+        except Exception:
+            refreshed = None
+        if not refreshed:
+            return None
+
+        ok, recovered_pane = refreshed.ensure_pane()
+        if not ok or not recovered_pane:
+            return None
+        recovered_pane = str(recovered_pane)
+
+        recovered_backend = get_backend_for_session(refreshed.data)
+        if not recovered_backend:
+            return None
+        try:
+            if not recovered_backend.is_alive(recovered_pane):
+                return None
+        except Exception:
+            return None
+
+        _write_log(
+            f"[WARN] No Codex anchor seen req_id={task.req_id}; "
+            f"rebinding session and retrying on pane {recovered_pane} (previous pane {pane_id})"
+        )
+
+        latest_log = _scan_latest_any_log(Path(refreshed.work_dir))
+        new_session_id = None
+        if latest_log:
+            try:
+                new_session_id = CodexCommunicator._extract_session_id(latest_log)
+            except Exception:
+                new_session_id = None
+            try:
+                refreshed.update_codex_log_binding(
+                    log_path=str(latest_log),
+                    session_id=new_session_id,
+                )
+            except Exception:
+                pass
+
+        recovered_reader = CodexLogReader(
+            log_path=latest_log or (refreshed.codex_session_path or None),
+            session_id_filter=new_session_id or (refreshed.codex_session_id or None),
+            work_dir=Path(refreshed.work_dir),
+        )
+        state = _tail_state_for_log(recovered_reader.current_log_path(), tail_bytes=tail_bytes)
+
+        try:
+            recovered_backend.send_text(recovered_pane, prompt)
+        except Exception:
+            return None
+
+        return refreshed, recovered_backend, recovered_pane, recovered_reader, state

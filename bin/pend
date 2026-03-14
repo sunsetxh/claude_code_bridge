@@ -8,7 +8,7 @@ Usage:
     pend --list [--provider P] [--status S]    # List tasks
 
 Providers (legacy mode):
-    gemini, codex, opencode, droid, claude
+    gemini, codex, opencode, droid, claude, cursor
 """
 
 import argparse
@@ -30,6 +30,7 @@ PROVIDER_PENDS = {
     "opencode": "opend",
     "droid": "dpend",
     "claude": "lpend",
+    "cursor": "upend",
 }
 
 
@@ -101,7 +102,7 @@ def _handle_list(args) -> int:
     if not ccb_dir:
         print("[ERROR] No .ccb directory found", file=sys.stderr)
         return 1
-    tasks = async_storage.list_tasks(ccb_dir, provider=args.provider, status=args.status)
+    tasks = async_storage.list_tasks(ccb_dir, provider=args.provider_filter, status=args.status)
     _print_task_list(tasks)
     return 0
 
@@ -133,10 +134,18 @@ def main():
         description="pend - View provider replies or query async tasks",
         add_help=False,
     )
-    parser.add_argument("provider", nargs="?", help="Provider name (gemini/codex/opencode/droid/claude)")
+    parser.add_argument(
+        "provider",
+        nargs="?",
+        help="Provider name (gemini/codex/opencode/droid/claude/cursor)",
+    )
     parser.add_argument("--task", help="Query task by ID")
     parser.add_argument("--list", action="store_true", help="List all tasks")
-    parser.add_argument("--provider", help="Filter by provider (for --list)")
+    parser.add_argument(
+        "--provider",
+        dest="provider_filter",
+        help="Filter by provider (for --list)",
+    )
     parser.add_argument("--status", help="Filter by status (for --list)")
     parser.add_argument("-h", "--help", action="store_true", help="Show this help")
     args, unknown = parser.parse_known_args()

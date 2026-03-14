@@ -51,8 +51,10 @@ class DualBridge:
         self.input_fifo = self.runtime_dir / "input.fifo"
         self.history_dir = self.runtime_dir / "history"
         self.history_file = self.history_dir / "session.jsonl"
-        self.bridge_log = self.runtime_dir / "bridge.log"
+        bridge_log_raw = (os.environ.get("CODEX_TMUX_LOG") or "").strip()
+        self.bridge_log = Path(bridge_log_raw) if bridge_log_raw else (self.runtime_dir / "bridge.log")
         self.history_dir.mkdir(parents=True, exist_ok=True)
+        self.bridge_log.parent.mkdir(parents=True, exist_ok=True)
 
         terminal_type = os.environ.get("CODEX_TERMINAL", "tmux")
         pane_id = os.environ.get("CODEX_WEZTERM_PANE") if terminal_type == "wezterm" else os.environ.get("CODEX_TMUX_SESSION")

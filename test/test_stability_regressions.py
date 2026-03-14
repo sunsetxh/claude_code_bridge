@@ -398,6 +398,116 @@ def test_opencode_adapter_recovers_after_dead_pane(monkeypatch, tmp_path: Path) 
     assert notifications[0]["status"] == "completed"
 
 
+def test_codex_adapter_recovers_after_missing_anchor(monkeypatch, tmp_path: Path) -> None:
+    from askd.adapters import codex as codex_mod
+
+    notifications: list[dict] = []
+    sent_prompts: list[tuple[str, str]] = []
+    log_path = tmp_path / "codex-session.jsonl"
+
+    class _Session:
+        work_dir = str(tmp_path)
+
+        def __init__(self, pane_id: str, log_hint: Path | None = None):
+            self._pane_id = pane_id
+            self._log_hint = str(log_hint) if log_hint else ""
+            self._session_id = "sid-new" if log_hint else "sid-old"
+            self.data = {"pane_id": pane_id, "terminal": "tmux"}
+
+        @property
+        def codex_session_path(self) -> str:
+            return self._log_hint
+
+        @property
+        def codex_session_id(self) -> str:
+            return self._session_id
+
+        def ensure_pane(self):
+            return True, self._pane_id
+
+        def update_codex_log_binding(self, *, log_path=None, session_id=None) -> None:
+            if log_path:
+                self._log_hint = str(log_path)
+            if session_id:
+                self._session_id = str(session_id)
+
+    class _Backend:
+        def send_text(self, pane_id: str, prompt: str) -> None:
+            sent_prompts.append((pane_id, prompt))
+
+        def is_alive(self, pane_id: str) -> bool:
+            return True
+
+    class _Reader:
+        def __init__(self, log_path=None, session_id_filter=None, work_dir=None):
+            self._log_path = Path(log_path) if log_path else None
+            self._event_emitted = False
+
+        def capture_state(self) -> dict:
+            return {"log_path": self.current_log_path(), "offset": 0}
+
+        def current_log_path(self):
+            return self._log_path
+
+        def wait_for_event(self, state: dict, timeout: float):
+            if len(sent_prompts) >= 2 and not self._event_emitted:
+                self._event_emitted = True
+                return ("user", "CCB_REQ_ID: req-1"), state
+            if len(sent_prompts) >= 2 and self._event_emitted:
+                return ("assistant", "done\nCCB_DONE: req-1"), state
+            return None, state
+
+    sessions = iter([_Session("pane-old"), _Session("pane-new", log_path)])
+
+    monkeypatch.setenv("CCB_CASKD_PANE_CHECK_INTERVAL", "0")
+    monkeypatch.setenv("CCB_CASKD_ANCHOR_GRACE_SECONDS", "0")
+    monkeypatch.setattr(codex_mod, "load_project_session", lambda work_dir, instance=None: next(sessions))
+    monkeypatch.setattr(codex_mod, "get_backend_for_session", lambda data: _Backend())
+    monkeypatch.setattr(codex_mod, "CodexLogReader", _Reader)
+    monkeypatch.setattr(codex_mod, "_scan_latest_any_log", lambda work_dir: log_path)
+    monkeypatch.setattr(codex_mod.CodexCommunicator, "_extract_session_id", staticmethod(lambda path: "sid-new"))
+    monkeypatch.setattr(codex_mod, "notify_completion", lambda **kwargs: notifications.append(kwargs))
+    monkeypatch.setattr(codex_mod, "_write_log", lambda line: None)
+
+    req = ProviderRequest(
+        client_id="c1",
+        work_dir=str(tmp_path),
+        timeout_s=1.0,
+        quiet=False,
+        message="hello",
+        caller="claude",
+    )
+    task = QueuedTask(
+        request=req,
+        created_ms=0,
+        req_id="req-1",
+        done_event=threading.Event(),
+        cancel_event=threading.Event(),
+    )
+
+    result = codex_mod.CodexAdapter().handle_task(task)
+
+    assert result.status == "completed"
+    assert result.fallback_scan is True
+    assert [pane for pane, _prompt in sent_prompts] == ["pane-old", "pane-new"]
+    assert notifications[0]["status"] == "completed"
+
+
+def test_codex_bridge_uses_declared_tmux_log(monkeypatch, tmp_path: Path) -> None:
+    from codex_dual_bridge import DualBridge
+
+    runtime_dir = tmp_path / "runtime"
+    log_path = tmp_path / "logs" / "bridge_output.log"
+
+    monkeypatch.setenv("CODEX_TMUX_SESSION", "%1")
+    monkeypatch.setenv("CODEX_TERMINAL", "tmux")
+    monkeypatch.setenv("CODEX_TMUX_LOG", str(log_path))
+
+    bridge = DualBridge(runtime_dir=runtime_dir, session_id="session-1")
+
+    assert bridge.bridge_log == log_path
+
+
 def test_ccb_cursor_cleanup_paths_present() -> None:
     content = (REPO_ROOT / "ccb").read_text(encoding="utf-8", errors="ignore")
 

@@ -214,6 +214,11 @@ def try_daemon_request(
                 legacy_state = Path(run_dir) / "oaskd.json"
                 if legacy_state.exists():
                     st = read_state(state_file=legacy_state)
+            # Unified askd: fallback to askd.json for hask, gask, etc.
+            elif not st:
+                unified_state = Path(run_dir) / "askd.json"
+                if unified_state.exists():
+                    st = read_state(state_file=unified_state)
 
     if not st:
         return None
@@ -225,8 +230,13 @@ def try_daemon_request(
         return None
 
     try:
+        # Determine request type: unified askd uses "ask.request", legacy daemons use "{prefix}.request"
+        # Check if the daemon state has "managed" field (unified askd marker)
+        is_unified_askd = st.get("managed") is True
+        request_prefix = "ask" if is_unified_askd else spec.protocol_prefix
+
         payload = {
-            "type": f"{spec.protocol_prefix}.request",
+            "type": f"{request_prefix}.request",
             "v": 1,
             "id": f"{spec.protocol_prefix}-{os.getpid()}-{int(time.time() * 1000)}",
             "token": token,
@@ -245,18 +255,14 @@ def try_daemon_request(
             payload["no_wrap"] = True
 
         # Unified askd requires provider and caller fields
-        if spec.protocol_prefix == "ask":
-            if spec.provider_name:
-                payload["provider"] = spec.provider_name
-            caller = os.environ.get("CCB_CALLER", "").strip()
-            if not caller:
-                caller = "manual"  # Default caller for unified askd
-            payload["caller"] = caller
-        else:
-            # Legacy provider-specific daemons: caller is optional
-            caller = os.environ.get("CCB_CALLER", "").strip()
-            if caller:
-                payload["caller"] = caller
+        # For protocol_prefix == "ask", provider comes from spec.provider_name
+        # For legacy prefixes (hask, gask, etc.), provider comes from spec as well
+        if spec.provider_name:
+            payload["provider"] = spec.provider_name
+        caller = os.environ.get("CCB_CALLER", "").strip()
+        if not caller:
+            caller = "manual"  # Default caller
+        payload["caller"] = caller
         connect_timeout = min(1.0, max(0.1, float(timeout)))
         with socket.create_connection((host, port), timeout=connect_timeout) as sock:
             sock.settimeout(0.5)
@@ -275,7 +281,9 @@ def try_daemon_request(
                 return None
             line = buf.split(b"\n", 1)[0].decode("utf-8", errors="replace")
             resp = json.loads(line)
-            if resp.get("type") != f"{spec.protocol_prefix}.response":
+            # Unified askd responds with "ask.response", legacy daemons use "{prefix}.response"
+            resp_type = resp.get("type", "")
+            if resp_type != f"{spec.protocol_prefix}.response" and resp_type != "ask.response":
                 return None
             reply = str(resp.get("reply") or "")
             exit_code = int(resp.get("exit_code", 1))
