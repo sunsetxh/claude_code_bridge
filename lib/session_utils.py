@@ -139,6 +139,115 @@ def print_session_error(msg: str, to_stderr: bool = True) -> None:
     print(msg, file=output)
 
 
+def check_active_session(session_file: Path, provider_name: str) -> Tuple[bool, Optional[str], Optional[dict]]:
+    """
+    Check if a provider session is already active.
+
+    Args:
+        session_file: Path to the session file (e.g., .codex-session)
+        provider_name: Name of the provider for error messages (e.g., "Codex")
+
+    Returns:
+        (is_active, message, session_data)
+        - is_active: True if session exists and pane is alive
+        - message: Error/info message if is_active is True, None otherwise
+        - session_data: The session data dict if exists, None otherwise
+    """
+    if not session_file or not session_file.exists():
+        return False, None, None
+
+    try:
+        import json
+        data = json.loads(session_file.read_text(encoding="utf-8"))
+    except Exception:
+        return False, None, None
+
+    if not isinstance(data, dict):
+        return False, None, None
+
+    # Check if session is marked active
+    if not data.get("active"):
+        return False, None, data
+
+    # Get pane_id (support both old and new field names)
+    pane_id = data.get("pane_id") or data.get("tmux_session")
+    if not pane_id:
+        return False, None, data
+
+    # Check if pane is still alive
+    terminal_type = data.get("terminal", "tmux")
+    try:
+        if terminal_type == "tmux":
+            from terminal import TmuxBackend
+            backend = TmuxBackend()
+            if backend.is_alive(str(pane_id)):
+                return True, f"Active {provider_name} session found in pane {pane_id}", data
+        elif terminal_type == "wezterm":
+            from terminal import WeztermBackend
+            backend = WeztermBackend()
+            if backend.is_alive(str(pane_id)):
+                return True, f"Active {provider_name} session found in pane {pane_id}", data
+    except Exception:
+        pass
+
+    # Pane not found or not alive - session is stale
+    return False, None, data
+
+
+def check_conflicting_sessions(
+    work_dir: Path,
+    providers: list[str],
+    force: bool = False,
+) -> Tuple[bool, list[str]]:
+    """
+    Check for conflicting active CCB sessions in the same project directory.
+
+    Args:
+        work_dir: Project directory to check
+        providers: List of provider names to check (e.g., ["codex", "claude"])
+        force: If True, skip the check and allow override
+
+    Returns:
+        (has_conflict, conflicting_provider_names)
+        - has_conflict: True if any active session exists
+        - conflicting_providers: List of provider names with active sessions
+    """
+    if force:
+        return False, []
+
+    conflicting = []
+    for provider in providers:
+        session_filename = f".{provider}-session"
+        session_file = find_project_session_file(work_dir, session_filename)
+        if not session_file:
+            continue
+
+        is_active, _msg, _data = check_active_session(session_file, provider.capitalize())
+        if is_active:
+            conflicting.append(provider)
+
+    return len(conflicting) > 0, conflicting
+
+
+def format_conflict_error(providers: list[str], work_dir: Path) -> str:
+    """Format error message for conflicting sessions."""
+    provider_list = ", ".join(p.capitalize() for p in providers)
+    return f"""❌ CCB instance already running in this project directory.
+
+Active providers: {provider_list}
+Project directory: {work_dir}
+
+💡 Options:
+  1. Use the existing CCB session (attach to it with tmux/wezterm)
+  2. Stop the existing session first (close the tmux/wezterm window/pane)
+  3. Use --force to override (NOT RECOMMENDED: may cause cross-talk)
+
+To attach to the existing session:
+  - Find the tmux session: tmux list-sessions
+  - Attach: tmux attach-session -t <session-name>
+"""
+
+
 def find_project_session_file(work_dir: Path, session_filename: str) -> Optional[Path]:
     """
     Find a session file for the given work_dir.

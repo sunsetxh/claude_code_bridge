@@ -555,10 +555,12 @@ class AILauncher:
         resume: bool = False,
         auto: bool = False,
         cmd_config: dict | None = None,
+        force: bool = False,
     ):
         self.providers = providers or ["codex"]
         self.resume = resume
         self.auto = auto
+        self.force = force
         self.cmd_config = self._normalize_cmd_config(cmd_config)
         self.script_dir = Path(__file__).resolve().parent
         self.invocation_dir = Path.cwd()
@@ -1184,6 +1186,23 @@ class AILauncher:
         return True
 
     def _start_provider(self, provider: str, *, parent_pane: str | None = None, direction: str | None = None) -> str | None:
+        # Check for conflicting active session (unless --force is used)
+        if not self.force:
+            session_file = self._project_session_file(f".{provider}-session")
+            from session_utils import check_active_session
+            is_active, msg, _data = check_active_session(session_file, provider.capitalize())
+            if is_active:
+                print(f"❌ {msg}")
+                print(f"💡 Another CCB instance is already running {provider.capitalize()} in this project directory.")
+                print(f"   Project: {self.project_root}")
+                print(f"   Session: {session_file}")
+                print()
+                print(f"Options:")
+                print(f"  1. Use the existing CCB session (find the tmux/wezterm window and attach)")
+                print(f"  2. Stop the existing session first (close the window/pane)")
+                print(f"  3. Override with: ccb --force {provider} ... (NOT RECOMMENDED)")
+                return None
+
         # Handle case when no terminal detected
         if self.terminal_type is None:
             print(f"❌ {t('no_terminal_backend')}")
@@ -4044,6 +4063,7 @@ def cmd_start(args):
         resume=resume,
         auto=auto,
         cmd_config=cmd_config,
+        force=bool(args.force),
     )
     return launcher.run_up()
 
@@ -5222,6 +5242,7 @@ def main():
     )
     start_parser.add_argument("-r", "--resume", "--restore", action="store_true", help="Resume context")
     start_parser.add_argument("-a", "--auto", action="store_true", help="Full auto permission mode")
+    start_parser.add_argument("--force", action="store_true", help="Override active session check (use with caution)")
     args = start_parser.parse_args(argv)
     return cmd_start(args)
 

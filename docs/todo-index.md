@@ -4,6 +4,9 @@ This index keeps project follow-up work grouped by topic instead of mixing unrel
 
 ## Active TODO Files
 
+- [docs/todo-multi-ccb-isolation.md](/home/wyc/code/github/claude_code_bridge/docs/todo-multi-ccb-isolation.md)
+  **HIGH SEVERITY**: Multiple CCB instances leak messages between windows.
+
 - [docs/todo-cursor-launcher.md](/home/wyc/code/github/claude_code_bridge/docs/todo-cursor-launcher.md)
   Remaining Cursor follow-up work after core launcher landing.
 

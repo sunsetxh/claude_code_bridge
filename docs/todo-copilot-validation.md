@@ -6,16 +6,18 @@
 
 Behavior looked correct, but no live Copilot session was available for full end-to-end verification.
 
+## Completed (2026-03-14)
+
+- [x] Validated `hping` with active session - returned `✅ Copilot connection OK (Session OK)`
+- [x] Validated `hask` async call - received successful response
+- [x] Confirmed session discovery and binding work in current project
+
 ## TODO
 
-1. Start Copilot in a fresh session context
+1. Start Copilot in a fresh session context (manual validation needed)
 
-2. Validate `ccb-ping copilot` with an active session
+2. Validate `ask copilot` flow (separate from `hask` direct call)
 
-3. Validate help and usage surfaces against actual runtime behavior
+3. Validate `hpend` for retrieving replies from session history
 
-4. Validate session discovery and binding in the current project
-
-5. Validate `ask` and `pend` flows against a real active Copilot session when applicable
-
-6. Record any launcher/session assumptions that differ from current docs
+4. Record any launcher/session assumptions that differ from current docs
