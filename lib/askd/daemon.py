@@ -123,6 +123,8 @@ class UnifiedAskDaemon:
 
     def _handle_request(self, msg: dict) -> dict:
         """Handle an incoming request."""
+        # Debug: log received req_id
+        _write_log(f"[DEBUG] received req_id={msg.get('req_id')} provider={msg.get('provider')}")
         provider = str(msg.get("provider") or "").strip().lower()
         if not provider:
             return {

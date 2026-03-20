@@ -369,6 +369,12 @@ def _send_via_unified_daemon(
         "caller": caller,
     }
 
+    # Pass req_id from async wrapper if available (for task tracking consistency)
+    ccb_req_id = os.environ.get("CCB_REQ_ID")
+    if ccb_req_id:
+        req["req_id"] = ccb_req_id
+        print(f"[DEBUG ask] CCB_REQ_ID={ccb_req_id}", file=sys.stderr)
+
     # Pass email-related env vars for email caller
     if caller == "email":
         req["email_req_id"] = os.environ.get("CCB_EMAIL_REQ_ID", "")
@@ -490,6 +496,11 @@ def _try_unified_daemon_silent(
         "no_wrap": no_wrap,
         "caller": caller,
     }
+
+    # Pass req_id from async wrapper if available (for task tracking consistency)
+    ccb_req_id = os.environ.get("CCB_REQ_ID")
+    if ccb_req_id:
+        req["req_id"] = ccb_req_id
 
     request_sent = False
     for attempt in range(2):

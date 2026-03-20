@@ -399,7 +399,7 @@ class TmuxBackend(TerminalBackend):
         Returns the log path when available.
         """
         pid = (pane_id or "").strip()
-        if not pid:
+        if not pid or not self._looks_like_pane_id(pid):
             return None
         log_path = self.pane_log_path(pid)
         if not log_path:
@@ -439,7 +439,7 @@ class TmuxBackend(TerminalBackend):
             return
         for pid in list(info.keys()):
             try:
-                if not self.is_alive(pid):
+                if not self._looks_like_pane_id(pid) or not self.is_alive(pid):
                     continue
                 cp = self._tmux_run(["display-message", "-p", "-t", pid, "#{pane_pipe}"], capture=True)
                 if (cp.stdout or "").strip() == "1":
@@ -797,6 +797,12 @@ class TmuxBackend(TerminalBackend):
         self._tmux_run(tmux_args, check=True)
         if remain_on_exit:
             self._tmux_run(["set-option", "-p", "-t", pane_id, "remain-on-exit", "on"], check=False)
+
+        # Re-establish pipe-pane logging after respawn (pipe may be disconnected by respawn-pane -k)
+        try:
+            self.ensure_pane_log(pane_id)
+        except Exception:
+            pass
 
     def save_crash_log(self, pane_id: str, crash_log_path: str, *, lines: int = 1000) -> None:
         text = self.get_pane_content(pane_id, lines=lines) or ""
